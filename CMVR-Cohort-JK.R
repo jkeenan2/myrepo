@@ -910,6 +910,34 @@ model1_lat_bi <- lm(eq5score ~ factor(visit_laterality, levels=c("2", "0", "1"))
 summary(model1_lat_bi)
 # So the bilateral ones didn't have worse QOL...
 
+# LONGITUDINAL?
+addmargins(xtabs(data=cmvrdatalong, ~eq5score+redcap_week))
+# So month 6 seems best...
+
+# THIS NOT CORRECT YET; NEED TO EXCLUDE PEOPLE WHO SUBSEQUENTLY DEVELOPED CMVR; OR MAYBE HAVE THEM SWITCH GROUPS OR SOMETHING
+qol_longitudinaldata <- cmvrdatalong %>%
+  filter(eye=="od_") %>%
+  group_by(studyid) %>%
+  mutate(baselinecmvr_work=if_else(visit_laterality>0 & redcap_week==0, 1, 0),
+         baselinecmvr=max(baselinecmvr_work, na.rm=TRUE),
+         baselineeq5_work=if_else(redcap_week==0, eq5score, NA_real_),
+         baselineeq5=max(baselineeq5_work, na.rm=TRUE))
+
+qol_longitudinaltable <- qol_longitudinaldata %>%
+  filter(redcap_week %in% c(0,24)) %>%
+  group_by(baselinecmvr, redcap_week) %>%
+  summarize(mean_eq5=mean(eq5score, na.rm=TRUE),
+            count_eq5=sum(!is.na(eq5score)))
+
+library(lme4)  
+model_long_int <- lmer(eq5score ~ redcap_week*baselinecmvr + (1|studyid), data=filter(qol_longitudinaldata, redcap_week %in% c(0,24)))
+summary(model_long_int)
+# Interaction term not significant; this would indicate that rate of change is different between the two groups
+# So just do a simple linear regression adjusting for baseline values
+model_long24 <- lm(eq5score ~ baselinecmvr + baselineeq5, data=filter(qol_longitudinaldata, redcap_week==24))
+summary(model_long24)
+
+
 
 ##  JK STOPPED HERE  ##
 
