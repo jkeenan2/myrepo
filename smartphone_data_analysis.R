@@ -147,7 +147,7 @@ adj_teams <- bind_rows(adj_team1, adj_team2, adj_team3, adj_team4) %>%
   select(-record_id)
 
 
-grading_data <- bind_rows(teams_import, adj_teams) %>%
+grading_data_allgrades <- bind_rows(teams_import, adj_teams) %>%
   select(-new_photo_grading_form_complete) %>%
   # JK: PREFERRED TO USE IF_ELSE NOT IFELSE
   mutate(dr_yesno = if_else((dr == 0 | dr == 1), 0, 
@@ -158,7 +158,9 @@ grading_data <- bind_rows(teams_import, adj_teams) %>%
                              # JK: THE XTABS NEEDS TO USE THE CORRECT DATA...
                      if_else((amd == 2 | amd == 3), 1, NA_real_))) %>% # xtabs(data=grading_data, ~dr + dr_yesno, addNA=TRUE)
                                                                        # xtabs(data=grading_data, ~amd + amd_yesno, addNA=TRUE)
-  separate(study_id, c("photoid", "grader"), sep = "--", remove = TRUE, convert = FALSE) %>%
+  separate(study_id, c("photoid", "grader"), sep = "--", remove = TRUE, convert = FALSE)
+
+grading_data_consensus <- grading_data_allgrades %>%
   group_by(photoid) %>%
   # JK: CHANGE THIS BACK to mutate to PROBLEMSOLVE
   summarize(numgraders=n(),
@@ -181,18 +183,19 @@ grading_data <- bind_rows(teams_import, adj_teams) %>%
          drsev_final=if_else(median(dr_yesno)==0,NA_real_,quantile(dr_severity, probs = 0.5, type=3, na.rm=TRUE)),
          amdsev_final=if_else(median(amd_yesno)==0,NA_real_,quantile(amd_severity, probs = 0.5, type=3, na.rm=TRUE)),
          amdsev_final=if_else(median(amd_yesno)==0,NA_real_,min(amd_severity)),
-         # JK: FOR MACULA< NERVE< ZONE2 NEED TO CHECK WHAT THE VAriABLES Are. 
+         nervecov_final=recode_factor(quantile(nerve, probs = 0.5, type=3, na.rm=TRUE), `0`="None", `1`="Some", `2`="All"),
+         maculacov_final=recode_factor(quantile(macula, probs = 0.5, type=3, na.rm=TRUE), `0`="None", `1`="Some", `2`="All"),
          imageclarity_final=quantile(image_clarity, probs = 0.5, type=3, na.rm=TRUE),
          vcdrconfidence_final=quantile(vcdr_confidence, probs = 0.5, type=3, na.rm=TRUE))
 # JK: GENERALLY WE NEED AT LEAST 2 GRADES TO HAVE A CONSENSUS; INVESTIGATE WHEN only 1 GRADE...
-xtabs(data=grading_data, ~numdrgrades + dr_final, addNA=TRUE)
-xtabs(data=grading_data, ~numdmegrades + dme_final, addNA=TRUE)
-xtabs(data=grading_data, ~numamdgrades + amd_final, addNA=TRUE)
-xtabs(data=grading_data, ~numcdrgrades + cdr_final, addNA=TRUE)
-xtabs(data=grading_data, ~drsev_final + dr_final, addNA=TRUE)
-xtabs(data=grading_data, ~amdsev_final + amd_final, addNA=TRUE)
+xtabs(data=grading_data_consensus, ~numdrgrades + dr_final, addNA=TRUE)
+xtabs(data=grading_data_consensus, ~numdmegrades + dme_final, addNA=TRUE)
+xtabs(data=grading_data_consensus, ~numamdgrades + amd_final, addNA=TRUE)
+xtabs(data=grading_data_consensus, ~numcdrgrades + cdr_final, addNA=TRUE)
+xtabs(data=grading_data_consensus, ~drsev_final + dr_final, addNA=TRUE)
+xtabs(data=grading_data_consensus, ~amdsev_final + amd_final, addNA=TRUE)
 
-ts_needdme <- grading_data %>%
+ts_needdme <- grading_data_consensus %>%
   filter(dme_final==0.5)
 # THere are 48 images that would need to be graded before a consensus DME grade could be given
 
@@ -268,7 +271,7 @@ ts_needdme <- grading_data %>%
 #                           if_else((other_dx_final == 2 | other_dx_final == 3), 1, 999)))
 
 
-clean_grading_data <- grading_data %>%
+clean_grading_data <- grading_data_consensus %>%
   select(photoid, imageclarity_final, dr_final, drsev_final, dme_final, amd_final, amdsev_final, vcdrconfidence_final, cdr_final, glaucoma_final)
 
 
@@ -282,6 +285,8 @@ clean_grading_data <- grading_data %>%
 alldata <- full_join(digicards_data, clean_grading_data, by="photoid") %>%
   arrange(study_id, eye, camera)
 
+alldataofallgraders <- full_join(digicards_data, grading_data_allgrades, by="photoid") %>%
+  arrange(study_id, eye, camera)
 
 # JK For final analysis we need to make sure that we have nonmissing data for gold standard and adjudicated grade for all 3 cameras. 
 # Only include those observations that meet this criteria.
@@ -299,11 +304,54 @@ write_csv(missingdata, "missingdata.csv")
 
 #take out rows with incomplete data for digicards/gold standard data & graded/adjudicated data for all 3 cameras
 alldata_final <- alldata %>%
-  mutate(studyid_eye=paste(study_id, eye, sep="_")) %>%
+  ungroup() %>%
+  mutate(studyid_eye=paste(study_id, eye, sep="_"),
+         dr=as.factor(dr),
+         dr_final=as.factor(dr_final)) %>%
   filter(!(studyid_eye %in% incompletedatavector)) %>%
   group_by(studyid_eye) %>%
   mutate(num_of_obs=n()) # xtabs(data=alldata_final, ~num_of_obs+camera, addNA=TRUE)
 # Should only be 3 observations per studyid_eye. So figure out what is going on.
+a <- alldata_final %>% ungroup() %>% filter(num_of_obs==3) %>% distinct(study_id) 
+b <- alldata_final %>% ungroup() %>% filter(num_of_obs==3) %>% distinct(studyid_eye)
+################################
+##          ANALYSES          ##
+################################
+
+# Inter-rater reliability, comparing 2 photo-graders for each camera
+grading_data_allgrades_kappadata <- alldataofallgraders %>%
+  filter(grader %in% c(1,2)) %>%
+  select(photoid, grader, camera, dr_yesno, amd_yesno) %>%
+  gather(field, value, dr_yesno:amd_yesno) %>%
+  mutate(fieldgrader=paste(field, grader, sep="__")) %>%
+  select(-field, -grader) %>%
+  spread(fieldgrader, value, convert=TRUE)
+
+library(irr)
+kappa2(grading_data_allgrades_kappadata[,5:6])
+# JK: I guess I don't love this syntax because hard to know what 5:6 is, whereas when you use the actual variable name then clearer.
+# Plus it doesn't give confidence intervals.
+# Trying out alternatives, then just picking one...
+library(fmsb)
+Kappa.test(x=grading_data_allgrades_kappadata$amd_yesno__1, y=grading_data_allgrades_kappadata$amd_yesno__2, conf.level=0.95)
+library(DescTools)
+CohenKappa(x=grading_data_allgrades_kappadata$amd_yesno__1, y=grading_data_allgrades_kappadata$amd_yesno__2, conf.level=0.95)
+library(psych)
+cohen.kappa(x=cbind(filter(grading_data_allgrades_kappadata, camera=="peek")$amd_yesno__1, filter(grading_data_allgrades_kappadata, camera=="peek")$amd_yesno__2), alpha=0.05)
+cohen.kappa(x=cbind(filter(grading_data_allgrades_kappadata, camera=="pictor")$amd_yesno__1, filter(grading_data_allgrades_kappadata, camera=="pictor")$amd_yesno__2), alpha=0.05)
+cohen.kappa(x=cbind(filter(grading_data_allgrades_kappadata, camera=="inview")$amd_yesno__1, filter(grading_data_allgrades_kappadata, camera=="inview")$amd_yesno__2), alpha=0.05)
+# JK: Note that different numbers for each comparison. That is not fair. Need to make sure you are doing it on the same population.
+grading_data_allgrades_kappadata2 <- grading_data_allgrades_kappadata %>%
+  mutate(studyid_eye=paste(study_id, eye, sep="_")) %>%
+  filter(!(studyid_eye %in% incompletedatavector)) %>%
+  group_by(studyid_eye) %>%
+  mutate(num_perstudyideye=n()) %>% # xtabs(data=grading_data_allgrades_kappadata2, ~numperstudyideye+camera)
+                                    # xtabs(data=grading_data_allgrades_kappadata2, ~study_id+camera)
+  filter(num_perstudyideye==3 & !is.na(amd_yesno__1) & !is.na(amd_yesno__2) & !is.na(dr_yesno__1) & !is.na(dr_yesno__2))
+# Kappas on the same population (156 eyes)
+cohen.kappa(x=cbind(filter(grading_data_allgrades_kappadata2, camera=="peek")$amd_yesno__1, filter(grading_data_allgrades_kappadata2, camera=="peek")$amd_yesno__2), alpha=0.05)
+cohen.kappa(x=cbind(filter(grading_data_allgrades_kappadata2, camera=="pictor")$amd_yesno__1, filter(grading_data_allgrades_kappadata2, camera=="pictor")$amd_yesno__2), alpha=0.05)
+cohen.kappa(x=cbind(filter(grading_data_allgrades_kappadata2, camera=="inview")$amd_yesno__1, filter(grading_data_allgrades_kappadata2, camera=="inview")$amd_yesno__2), alpha=0.05)
 
 
 # JK: Trying out the yardstick package from Louisa's email
@@ -321,6 +369,8 @@ alldata_final %>% filter(!is.na(camera)) %>% group_by(camera) %>% spec(., truth 
 # I guess you can get multiple metrics at once with this "metric_set" command
 class_metrics <- metric_set(sens, spec, ppv, npv)
 
+library(skimr)
+skim(alldata_final %>% ungroup())
 # For the actual numbers...
 confmatrixtable_dr <- alldata_final %>%
   filter(!is.na(camera)) %>%
@@ -414,8 +464,8 @@ sensspectable_dr <- full_join(sensspec_estimates_dr, bs_sensspec_dr, by="camera"
 sensspectablelong_dr <- sensspectable_dr %>%
   gather(field, value, npv_est:npv_upper95) %>%
   separate(field, into=c("metric", "stat"), sep="_") %>%
-  spread(stat, value, convert=TRUE) %>%
-  write.csv("senspectablelong_dr.csv")
+  spread(stat, value, convert=TRUE)
+write_csv(sensspectablelong_dr, "sensspectablelong_dr.csv")
 
 ## END JK CODE HERE
 
