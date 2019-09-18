@@ -28,6 +28,44 @@ inclinic_data2 <- inclinic_data %>%
   select(HN, photodate, patientrefertochoeng, photonumber:cd4countdate) %>%
   arrange(photodate)
 
+## Need to remove patients that should not be included form sheet that you sent me
+
+inclinic_data3 <- inclinic_data2 %>%
+  filter(HN != 5658168 &
+           HN != 5704433 &
+           HN != 5604947 &
+           HN != 5636895 &
+           HN != 4843446 &
+           HN != 5737820 &
+           HN != 5768271 &
+           HN != 5740689 &
+           HN != 5774166 &
+           HN != 5417027 &
+           HN != 5803679 &
+           HN != 5806744 &
+           HN != 5808445 &
+           HN != 5803515 &
+           HN != 5815335 &
+           HN != 5815996 &
+           HN != 5819144 &
+           HN != 5826676 &
+           HN != 5828233 &
+           HN != 5829827 &
+           HN != 5829884 &
+           HN != 5844196 &
+           HN != 5856139 &
+           HN != 5821670 &
+           HN != 5846888 &
+           HN != 5383354 &
+           HN != 5861941 &
+           HN != 5878326 &
+           HN != 5868329 &
+           HN != 5824039 &
+           HN != 5862344 &
+           HN != 5912754 &
+           HN != 5915117)
+
+
 cd4_data2  <- cd4_data %>%
   # JK: cleaner to me to just use the command once, and then commas...
   rename(include = "Include?",
