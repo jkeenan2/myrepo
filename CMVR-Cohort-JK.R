@@ -2,10 +2,21 @@
 rm(list=ls())
 graphics.off()
 
+# install.packages("Hmisc")
+# install.packages("biostat3")
+# install.packages("survminer")
+# install.packages("coxphf")
+
 #Load Hmisc library
 #library(Hmisc)
 library(readr)
 library(biostat3)
+
+#? Whenever I load the above package it masks "select" from dplyr, is there a way to change the order?
+# I know that I can call on the function using "dplyr::", and that I can unloadNamespace("MASS")
+# but I see that you did not need to use this. Running the code a second time, I notice that the order matters, 
+# but wanted to ask anyway for my learning
+
 #Load exploratory redcapexport analysis packages
 library(tidyverse)
 library(tidyr)
@@ -19,11 +30,16 @@ library(skimr)
 library(broom)
 library(eq5d)
 
-
 #Read Data
 redcapexport <- read_csv("RetinitisTreatedWith_DATA_2019-04-27_1548.csv", 
                          col_types = cols(mrn = col_character()),
                          guess_max=3000)
+#Read data from the csv that I have 
+
+#redcapexport <- read_csv("RetinitisTreatedWith_DATA_2019-08-04_2344.csv", 
+#                         col_types = cols(mrn = col_character()),
+#                         guess_max=3000)
+
 # cd4_date = col_date(format = "%Y/%m/%d"), 
 # cd_12m_date_v2 = col_date(format = "%Y/%m/%d"), 
 # cd_6m_date = col_date(format = "%Y/%m/%d"), 
@@ -35,7 +51,6 @@ redcapexport <- read_csv("RetinitisTreatedWith_DATA_2019-04-27_1548.csv",
 # fu_date = col_date(format = "%Y/%m/%d"), 
 # haart_date = col_date(format = "%Y/%m/%d"), 
 # reg_date = col_date(format = "%Y/%m/%d")))
-
 
 
 ############################
@@ -53,12 +68,12 @@ cmvr_eq5data <- redcapexport %>%
          UA=eq_3,
          PD=eq_4,
          AD=eq_5) %>%
-  select(studyid, redcap_event_name, MO, SC, UA, PD, AD) %>%
+  dplyr::select(studyid, redcap_event_name, MO, SC, UA, PD, AD) %>%
   arrange(studyid, redcap_event_name) # xtabs(data=cmvr_eq5data, ~dup)
 cmvr_eq5 <- bind_cols(cmvr_eq5data, 
                       # THINK OF THIS AS MAKING A NEW DATA FRAME THAT YOU WANT TO BIND
                       # THE ONLY WAY I COULD FIGURE OUT HOW TO NAME THE NEW COLUMN WAS THE MATRIX AND DIMNAMES BUSINESS...
-                      as.data.frame(matrix(cmvr_eq5data %>% select(MO, SC, UA, PD, AD) %>% eq5d(., country="Thailand", version="5L", type="VT"), dimnames=list(NULL, c("eq5score")))))
+                      as.data.frame(matrix(cmvr_eq5data %>% dplyr::select(MO, SC, UA, PD, AD) %>% eq5d(., country="Thailand", version="5L", type="VT"), dimnames=list(NULL, c("eq5score")))))
 # Confirming it worked...
 head(cmvr_eq5 %>%
        select(studyid, redcap_event_name, MO, SC, UA, PD, AD, eq5score))
@@ -67,11 +82,13 @@ eq5d(c(MO=1,SC=1,UA=1,PD=1,AD=2), country="Thailand", version="5L", type="VT")
 # Looks OK
 cmvr_eq5_formerge <- cmvr_eq5 %>%
   select(studyid, redcap_event_name, eq5score)
+
 #change format of date recordings to number of weeks
 cmvrdata <- redcapexport %>%
   separate(studyid, c("id", "dde"), sep = "--", remove = FALSE, convert = FALSE) %>%
   filter(is.na(dde) & studyid != "test" & studyid != "test3") %>%
   left_join(., cmvr_eq5_formerge, by=c("studyid", "redcap_event_name")) %>%
+#? for this left_join above does the "." just indicate the dataset being piped? 
   mutate(hivdx_date = as.Date(hivdx_date, format = "%m/%d/%y"),
          redcap_week=NA,
          redcap_week=ifelse(redcap_event_name == "0_wk_arm_1", 0,
@@ -147,6 +164,7 @@ cmvrdata <- redcapexport %>%
   mutate(timesincehiv = as.numeric((if_else(!is.na(hivdx_date), min(exam_date, na.rm=TRUE) - hivdx_date, 
                         if_else(hiv_dxdate3==1, hivdx_date2*(365/12), 
                         if_else(hiv_dxdate3==2, hivdx_date2*365, 999))))/(365/12)),
+         #? for the above line of code what does the 999 come from? 
          fu_os_cmv=if_else(studyid=="C128" & redcap_week==44,2,fu_os_cmv)) %>%
   ungroup()
 
@@ -175,6 +193,7 @@ photonames <- read_excel("CMV_Photos_New-File-Names-27APR2019-JK.xlsx", sheet = 
          date3=ymd(date2)) %>%
   separate(date1, into=c("x", "y"), sep="_", remove=FALSE) %>%
   mutate(x=if_else(x=="0" | x=="New", NA_character_, x),
+         #? I am not fully understanding what the above line of code does?
          date4=if_else(is.na(date3) & !is.na(x), substr(x, start=1, stop=8), 
                        if_else(is.na(date3) & !is.na(y), substr(y, start=1, stop=8), date2)),
          date4=case_when(newname=="C26_RE_1.jpg" ~ "20130711",
@@ -864,7 +883,9 @@ addmargins(xtabs(data=filter(cmvrdatalong, studyid=="C136"), ~redcap_week+eye, a
 addmargins(xtabs(data=filter(cmvrdatalong, eye=="od_" & redcap_week==0), ~studyid+ visit_laterality))
 qol0data <- cmvrdatalong %>%
   filter(eye=="od_" & redcap_week==0) %>%
-  mutate(anycmvr=if_else(visit_laterality>0, 1, 0))
+  mutate(anycmvr=if_else(visit_laterality>0, 1, 0),
+  va.2060=if_else(logmar>0.47712125471966,1,0),
+  va.20400=if_else(logmar>1.301029995664,1,0)))
 
 qol_table1 <- qol0data %>%
   group_by(anycmvr) %>%
@@ -876,13 +897,36 @@ qol_table1 <- qol0data %>%
             count_age=sum(!is.na(age)),
             num_female=sum(female==1),
             count_female=sum(!is.na(female)),
-            prop_female=num_female/count_female) %>%
-  # PLEASE ADD TO THIS BASELINE TABLE; VISION? CD4? TIME SINCE HIV?
+            prop_female=num_female/count_female,
+            medianvaph=median(va_ph),
+            count.va2060=sum(!is.na(va.2060)),
+            count.va20400=sum(!is.na(va.20400)),
+            count.univi=sum(uni_vi==1),
+            prop.univi=mean(uni_vi==1),
+            count.bivi=sum(bi_vi==1),
+            prop.bivi=mean(bi_vi==1),
+            count.uniblind=sum(uni_blind==1),
+            prop.uniblind=mean(uni_blind==1),
+            count.biblind=sum(bi_blind==1),
+            prop.biblind=mean(bi_blind==1),
+            mediantimehiv=median(timesincehiv),
+            timehivp25=quantile(timesincehiv, 1/4),
+            timehivp75=quantile(timesincehiv, 3/4),           
+            countcd4=sum(!is.na(new_cd4_count)),
+            mediancd4=median(new_cd4_count, na.rm=TRUE),
+            cd4p25=quantile(new_cd4_count, 1/4, na.rm=TRUE),
+            cd4p75=quantile(new_cd4_count, 3/4, na.rm=TRUE),
+            count.haart=sum(haart==1),
+            count.rd=sum(new_rd==1),
+            count.nord=sum(new_rd==0))%>% 
+# PLEASE ADD TO THIS BASELINE TABLE; VISION? CD4? TIME SINCE HIV?  
   gather(field, value, mean_eq5:prop_female) %>%
   separate(field, into=c("stat", "var"), sep="_") %>%
   mutate(groupstat=paste(anycmvr, stat, sep="_")) %>%
   select(-stat, -anycmvr) %>%
   spread(groupstat, value, convert=TRUE)
+#? I played around with this for sometime, I am unsure exactly why it continues to split 
+# 0_num and 0_prop. I know this is relatively simple, but still struggling here
 
 # GETTING CONFIDENCE INTERVALS, ANYCMVR
 model1_nocmv <- lm(eq5score ~ anycmvr, data=qol0data)
@@ -909,6 +953,96 @@ summary(model1_lat_uni)
 model1_lat_bi <- lm(eq5score ~ factor(visit_laterality, levels=c("2", "0", "1")), data=qol0data)
 summary(model1_lat_bi)
 # So the bilateral ones didn't have worse QOL...
+
+#? Am I doding this correct(below)? I switch the levels? 
+#? Does HAART effect QOL? 
+model1_haart <- lm(eq5score ~ factor(haart, levels=c("1", "0")), data=qol0data)
+summary(model1_haart)
+model1_nohaart <- lm(eq5score ~ factor(haart, levels=c("0", "1")), data=qol0data)
+summary(model1_nohaart)
+
+#? Now for cd4 since it is continuous, I don't need to specify that it is a factor. 
+model1_cd4 <- lm(eq5score ~ new_cd4_count, data=qol0data)
+summary(model1_cd4)
+#? Do I compare it against 1 here? This doesn't seem correct? 
+model1_nocd4 <- lm(eq5score ~ 1, data=qol0data)
+summary(model1_nocd4)
+
+anova(model1_cd4, model1_nocd4)
+#Error in anova.lmlist(object, ...) : 
+##  models were not all fitted to the same size of dataset
+
+#? I don't think that I am fully understanding this. I get the linear regression
+# and the adjusting for baseline covariates. However, the comparsion I am a little confused with
+# depending on if this is a factor or continuous. 
+
+# Now for HK QOL 
+
+hkqol_0 <- qol0data %>%
+  mutate(distancesum = (hk1 + hk2 + hk3 +hk4 +hk5 +hk6)) %>%
+  mutate(distancestand = (hk1 + hk2 + hk3 +hk4 +hk5 +hk6) * (100/(4*6))) %>%
+  mutate(nearsum = (hk7 + hk8 + hk9 +hk10 +hk11 +hk12 +hk13)) %>%
+  mutate(nearstand = (hk7 + hk8 + hk9 +hk10 +hk11 +hk12 +hk13) * (100/(4*7))) %>%
+  mutate(socialsum = (hk14 +hk15 + hk16 +hk17)) %>%
+  mutate(socialstand = (hk14 +hk15 + hk16 +hk17) * (100/(4*4))) %>%
+  mutate(catsum = (hk18 + hk19 + hk20 +hk21)) %>%
+  mutate(catstand = (hk18 + hk19 + hk20 +hk21) * (100/(4*4))) %>%
+  mutate(qolsum = (hk22 + hk23 + hk24)) %>%
+  mutate(qolstand = (hk22 + hk23 + hk24) * (100/(4*3))) %>%
+  mutate(totalhksum = (hk1 + hk2 + hk3 +hk4 +hk5 +hk6 + hk7 + hk8 + hk9 +hk10 +hk11 +hk12 +hk13 + hk14 +hk15 + hk16 +hk17 + hk18 + hk19 + hk20 +hk21 + hk22 + hk23 + hk24)) %>%
+  mutate(totalhkstand = (hk1 + hk2 + hk3 +hk4 +hk5 +hk6 + hk7 + hk8 + hk9 +hk10 +hk11 +hk12 +hk13 + hk14 +hk15 + hk16 +hk17 + hk18 + hk19 + hk20 +hk21 + hk22 + hk23 + hk24) * (100/(4*24))) 
+
+# Anycmvr for total and 5 catagories for hk
+#total
+modelhktot_nocmv <- lm(totalhkstand ~ anycmvr, data=qol0data)
+summary(modelhktot_nocmv)
+confint(modelhktot_nocmv)
+modelhktot_cmv <- lm(totalhkstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
+summary(modelhktot_cmv)
+confint(modelhktot_cmv)
+#distance
+modelhkdist_nocmv <- lm(distancestand ~ anycmvr, data=qol0data)
+summary(modelhkdist_nocmv)
+confint(modelhkdist_nocmv)
+modelhkdist_cmv <- lm(distancestand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
+summary(modelhkdist_cmv)
+confint(modelhkdist_cmv)
+#near
+modelhknear_nocmv <- lm(nearstand ~ anycmvr, data=qol0data)
+summary(modelhknear_nocmv)
+confint(modelhknear_nocmv)
+modelhknear_cmv <- lm(nearstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
+summary(modelhknear_cmv)
+confint(modelhknear_cmv)
+#social
+modelhksoc_nocmv <- lm(socialstand ~ anycmvr, data=qol0data)
+summary(modelhksoc_nocmv)
+confint(modelhksoc_nocmv)
+modelhksoc_cmv <- lm(socialstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
+summary(modelhksoc_cmv)
+confint(modelhksoc_cmv)
+#cataract
+modelhkcat_nocmv <- lm(catstand ~ anycmvr, data=qol0data)
+summary(modelhkcat_nocmv)
+confint(modelhkcat_nocmv)
+modelhkcat_cmv <- lm(catstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
+summary(modelhkcat_cmv)
+confint(modelhkcat_cmv)
+#hkqol subsection
+modelhkqolsub_nocmv <- lm(qolstand ~ anycmvr, data=qol0data)
+summary(modelhkqolsub_nocmv)
+confint(modelhkqolsub_nocmv)
+modelhkqolsub_cmv <- lm(qolstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
+summary(modelhkqolsub_cmv)
+confint(modelhkqolsub_cmv)
+
+#For uni or bilat blindness for hk total 
+modelhktot_lat_uni <- lm(totalhkstand ~ factor(visit_laterality, levels=c("1", "0", "2")), data=qol0data)
+summary(modelhktot_lat_uni)
+modelhktot_lat_bi <- lm(totalhkstand ~ factor(visit_laterality, levels=c("2", "0", "1")), data=qol0data)
+summary(modelhktot_lat_bi)
+
+#? I am going to wait to see if I did the above correct, but will continue (will have a chance to work more this weekend)...
 
 # LONGITUDINAL?
 addmargins(xtabs(data=cmvrdatalong, ~eq5score+redcap_week))
