@@ -5,7 +5,7 @@ library(skimr)
 library(dplyr)
 library(rsample)
 
-costscreened_redcapexport <- read_csv("CostSCREENED_DATA_2019-09-18_0711.csv")
+costscreened_redcapexport <- read_csv("CostSCREENED_DATA_2019-09-24_0706.csv")
 glimpse(costscreened_redcapexport)
 # Check out different types of records
 xtabs(data=costscreened_redcapexport , ~redcap_event_name+clinic_attended_v2, addNA=TRUE) # I guess we only want screening visit
@@ -44,7 +44,19 @@ screeningdata <- costscreened %>%
 # We essentially want only 2 main data frames: a wide one and long one.
 # I am only including the screeningdata and yingdata dataframes for now
 
-csdatawide <- full_join(screeningdata, yingdata, by="study_id") %>%
+#Import randomization model 
+
+randomization_model <- read_csv("randomization_model_results.csv")
+
+screeningdata2 <- full_join(randomization_model, screeningdata, by="study_id")
+
+#View(screeningdata2)
+skim(screeningdata)
+skim(screeningdata2)
+
+#Ok, 889 in both so merge worked properly 
+
+csdatawide <- full_join(screeningdata2, yingdata, by="study_id") %>%
   # In order to reshape to long, get all variables in common format, with ".re" or ".le" at the end...
   rename(visual_symptoms.re=visual_symptoms_re,
          sx_blurry.re=symptoms_right___0,
@@ -351,8 +363,9 @@ csdatalong <- csdatawide %>%
 # csgsts5 <- csgsexamcomplete %>%
 #    filter(is.na(oe_vcdr))
 # 
-# # These 9 cases are true missing. (ie. cannot determine, for example no eye)
+# # These cases are true missing. (ie. cannot determine, for example no eye)
 # #? How should we define these for analysis?
+# 3867078 = prosthetic LE no IOP; 3371230, 3867000 = CND RE VCDR; 3654437, 3744448, 3867000, 3867078 CND VCDR LE
 # 
 # csgsts6 <- csgsexamcomplete %>%
 #    filter(is.na(oe_iop))
@@ -401,35 +414,34 @@ csdatalong <- csdatawide %>%
 # #this is by eye not person, not eye, so incorrect
 # #By Person:
 
-
-
-csdatalong <- csdatalong %>%
-     group_by(study_id) %>%
-     mutate(maxanyfail=max(screenfail_anycd))
-# 
-
 csdatalongreferralcheck <- csdatalong %>%
        group_by(study_id) %>%
        mutate(maxanyfail=max(screenfail_anycd))
 
-
 # addmargins(xtabs(data=filter(csdatalongreferralcheck, consent==1), ~ maxanyfail + refer_patient_randomizatio, addNA=TRUE))
 ## Correct definition of maxanyfail, and confirmation that all calcs for refer match those referred 
 
-shouldcompletegs <- csdatalong %>%
+csdatalongreferralcheck2 <- csdatalong %>%
+  group_by(study_id) %>%
+  mutate(maxanyfail=max(screenfail_anycd, na.rm=TRUE)) %>%
+  mutate(shouldcompletegs=ifelse((maxanyfail== 1 | randomization_model == "Refer"), 1, 0),
+         accountedfor=ifelse((ophthalmologist_exam_complete ==2 | phone_call_complete==2), 1, 0))
+
+xtabs(data=csdatalongreferralcheck2, ~accountedfor+shouldcompletegs, addNA=TRUE)
+
+tsgsneeded <- csdatalongreferralcheck2 %>%
+  filter(accountedfor == 0 & shouldcompletegs ==1)
+
+# One patient that we did not call for referral, 2210451, 
+# I had Ying call and they have follow up in outside clinic, updated in Redcap
+
+
+shouldcompletegs <- csdatalongreferralcheck %>%
   filter(consent==1)
-  filter(maxanyfail== 1 | RANDOMREFERRAL ==1)
+  filter(maxanyfail== 1 |  randomization_model == "Refer")  
   
-  #? I am not sure how to handle the randomization model. The variable name is "refer_negative"
-  # the coloumn value is an integer corresponding to "refer and "do not refer"
-  #I patients have a non-positive screen they will have this number
-  # but I am unsure if the integer correcponds to a refer or do not refer. Does this make sense?
-  # I figure you have encountered this before in other studies. Unable to find anyhting online
-  
-accountedfor <- csdatalong %>%
+accountedfor <- csdatalongreferralcheck %>%
   filter(ophthalmologist_exam_complete ==2 | phone_call_complete==2)
-  
-  xtabs(data=amdexploredata, ~oe_amdsum+oe_amd_none, addNA=TRUE)
 
 ##########
 # Kappas for agreement to OpReview 
@@ -656,6 +668,13 @@ sensspectablelong <- sensspectable %>%
   separate(field, into=c("metric", "stat"), sep="_") %>%
   spread(stat, value, convert=TRUE)
 
+ #table 5 (snes and spec)
+             
+             # lm(formula, data, subset, weights, na.action,
+   method = "qr", model = TRUE, x = FALSE, y = FALSE, qr = TRUE,
+   singular.ok = TRUE, contrasts = NULL, offset, ...)
+             
+             
 ------------------
 
 demo_stats <- csdatawide %>%
