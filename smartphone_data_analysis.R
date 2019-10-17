@@ -11,11 +11,12 @@ library(epiR)
 library(dplyr)
 
 ##Read Digicards Data
-# JK: renaming so same format for all
 # JK: looks like cataract not recorded separately for each eye so not really sure how this will be useful 
-# JK: missing data for 2 of them, I am filtering them out
+    #LL: Digicards didn't distinguish btwn OD/OS cataracts if I remember correctly (or else I assume I
+    #     would have separated them). I guess the data can be included in summary characteristics of eyes in 
+    #     Table 1.
+# JK: missing data for 2 of them, I am filtering them out // LL: OK (complete set of photos not taken for these patients)
 redcapexport <- read_csv("SmartphoneRetinalScr_DATA_2019-09-10_0855.csv") %>%
-  select(-cataract, -cataract_deg) %>%
   filter(study_id!=3807366 & study_id!=3746321) %>%
   rename(otherretinalpath_right=other_retinal_path,
          otherretinalpath_left=other_retinal_path_left,
@@ -46,13 +47,16 @@ hospitalandphotoid_long <- hospitalandphotoid %>%
   mutate(study_id=formatC(as.integer(study_id), width = 7, format = "d", flag = "0")) %>%
   gather(key = camera, value = photoid, peek:pictor) %>%
   group_by(study_id, eye, camera) %>%
-  mutate(duph=n())  # xtabs(data=hospitalandphotoid_long, ~duph, addNA=TRUE)
+  mutate(duph=n())
   # select(-duph) 
+  # xtabs(data=hospitalandphotoid_long, ~duph, addNA=TRUE)
 
 # JK: There are 258 duplicates combinations of study_id, eye, and camera in this file. 
 # JK: There should be no duplicates before merging.
 # JK: Louisa, do you know what is going on here? Are these duplicates on purpose for intra-grader reliability or something?
 # JK: If so we need to designate which one is the official photo and which one is the duplicate.
+    # LL: these duplicates are patients who had their photos taken on 2 separate clinic visits.
+    # LL: perhaps we can select photos from just the 1st visit for these patients?
 hdups <-   hospitalandphotoid_long %>%
   filter(duph>1)
 
@@ -70,9 +74,9 @@ redcapexport_long <- redcapexport %>%
   separate(field, into=c("camera", "var"), sep="_") %>%
   spread(var, value, convert=TRUE) %>%
   select(study_id, eye, camera, everything()) %>%
-  group_by(study_id, eye, camera) %>%
-  mutate(dupr=n()) %>% # xtabs(data=redcapexport_long, ~dupr, addNA=TRUE)
-  select(-dupr) 
+  group_by(study_id, eye, camera)
+  # mutate(dupr=n()) %>% # xtabs(data=redcapexport_long, ~dupr, addNA=TRUE)
+  # select(-dupr) 
 # NO DUPLICATES
 
 # JK: Please notice that we now have unique id of study_id, eye, and camera for both the redcapexport_long and hospitalandphotoid_long objects.
@@ -113,14 +117,18 @@ redcapexport_long <- redcapexport %>%
   
   
 digicards_data <- full_join(redcapexport_long, hospitalandphotoid_long, by=c("study_id", "eye", "camera")) %>%
-  mutate(photoid=as.character(photoid))
+  mutate(photoid=as.character(photoid)) %>%
+  filter(!is.na(photoid))
 # JK: Note that the digicards_data includes the 258 duplicates from the hospitalandphotoid_long file; these need to be fixed in some way
 
 # JK: Bad merges: Any idea what is going on with these?
-badmerge_no_h <- digicards_data %>%
-  filter(is.na(photoid))
-badmerge_no_r <- digicards_data %>%
-  filter(is.na(photo_date))
+    # LL: these patients had photos taken in only one eye (but I recorded Digicards diagnoses for both eyes)
+    # LL: filtered these out from digicards_data (above)
+
+# badmerge_no_h <- digicards_data %>%
+#   filter(is.na(photoid))
+# badmerge_no_r <- digicards_data %>%
+#   filter(is.na(photo_date))
 
 ##################
 
