@@ -221,8 +221,9 @@ grading_data_consensus <- grading_data_allgrades %>%
          drsev_final=if_else(median(dr_yesno)==0,NA_real_,quantile(dr_severity, probs = 0.5, type=3, na.rm=TRUE)),
          amdsev_final=if_else(median(amd_yesno)==0,NA_real_,quantile(amd_severity, probs = 0.5, type=3, na.rm=TRUE)),
          # amdsev_final=if_else(median(amd_yesno)==0,NA_real_,min(amd_severity)),
-         nervecov_final=recode_factor(quantile(nerve, probs = 0.5, type=3, na.rm=TRUE), `0`="None", `1`="Some", `2`="All"),
-         maculacov_final=recode_factor(quantile(macula, probs = 0.5, type=3, na.rm=TRUE), `0`="None", `1`="Some", `2`="All"),
+         nervecov_final=quantile(nerve, probs = 0.5, type=3, na.rm=TRUE),
+         maculacov_final=quantile(macula, probs = 0.5, type=3, na.rm=TRUE),
+         zone2_final=quantile(zone2, probs = 0.5, type=3, na.rm=TRUE),
          imageclarity_final=quantile(image_clarity, probs = 0.5, type=3, na.rm=TRUE),
          vcdrconfidence_final=quantile(vcdr_confidence, probs = 0.5, type=3, na.rm=TRUE))
 # JK: GENERALLY WE NEED AT LEAST 2 GRADES TO HAVE A CONSENSUS; INVESTIGATE WHEN only 1 GRADE...
@@ -233,8 +234,14 @@ xtabs(data=grading_data_consensus, ~numcdrgrades + cdr_final, addNA=TRUE)
 xtabs(data=grading_data_consensus, ~drsev_final + dr_final, addNA=TRUE)
 xtabs(data=grading_data_consensus, ~amdsev_final + amd_final, addNA=TRUE)
 
-ts_needdme <- grading_data_consensus %>%
-  filter(dme_final==0.5)
+
+clean_grading_data <- grading_data_consensus %>%
+  select(photoid, dr_final, drsev_final, dme_final, amd_final, amdsev_final, cdr_final, glaucoma_final, zone2_final, nervecov_final, maculacov_final, imageclarity_final, vcdrconfidence_final)
+
+
+
+# ts_needdme <- grading_data_consensus %>%
+#   filter(dme_final==0.5)
 # THere are 48 images that would need to be graded before a consensus DME grade could be given
 # LL: I don’t think grading for DME ended up being high yield at all, so I would be happy to just exclude DME from the analysis
 
@@ -302,7 +309,7 @@ ts_needdme <- grading_data_consensus %>%
 #                              if_else(dr_final == 1 & (dr_severity.1>dr_severity.2), dr_severity.1, dr_severity.2))) %>%
 #   mutate(image_clarity_final = if_else(image_clarity.1>image_clarity.2, image_clarity.1, image_clarity.2)) %>%
 #   mutate(macula_final = if_else(macula.1>macula.2, macula.1, macula.2)) %>%
-#   mutate(nerve_final = if_else(nerve.1>nerve.2, nerve.1, nerve.2)) %>%
+#   mutate(nervecov_final = if_else(nerve.1>nerve.2, nerve.1, nerve.2)) %>%
 #   mutate(notes_final = paste(notes.1, notes.2, notes.3, sep="/")) %>%
 #   mutate(other_dx_detail_final = paste(other_dx_detail.1, other_dx_detail.2, other_dx_detail.3, sep="/")) %>%
 #   mutate(other_dx_final = if_else(other_dx.1>other_dx.2, other_dx.1, other_dx.2)) %>%
@@ -312,11 +319,6 @@ ts_needdme <- grading_data_consensus %>%
 #   mutate(glaucoma_final = if_else(!is.na(cdr_final) & cdr_final >=0.7, 1, 0)) %>%
 #   mutate(other_dx_yesno = if_else((other_dx_final == 0 | other_dx_final == 1), 0,
 #                           if_else((other_dx_final == 2 | other_dx_final == 3), 1, 999)))
-
-
-clean_grading_data <- grading_data_consensus %>%
-  select(photoid, imageclarity_final, dr_final, drsev_final, dme_final, amd_final, amdsev_final, vcdrconfidence_final, cdr_final, glaucoma_final)
-
 
 #xtabs(data=grading_data, ~dr_yesno.1+dr_yesno.2, addNA=TRUE)
 #xtabs(data=grading_data, ~amd_yesno.1+amd_yesno.2, addNA=TRUE)
@@ -384,7 +386,7 @@ alldata_final <- alldata %>%
   filter(num_of_obs == 3) 
 # xtabs(data=alldata_final, ~num_of_obs+camera, addNA=TRUE)
 # Should only be 3 observations per studyid_eye. So figure out what is going on.
-  # LL: these photoid's with 12 obs correspond to patients with missing photos. Removed!
+  # LL: the photoid's with >3 obs corresponded to patients with missing photos. Removed!
 a <- alldata_final %>% ungroup() %>% filter(num_of_obs==3) %>% distinct(study_id) 
 b <- alldata_final %>% ungroup() %>% filter(num_of_obs==3) %>% distinct(studyid_eye)
 
@@ -402,8 +404,10 @@ grading_data_allgrades_kappadata <- alldataofallgraders %>%
   select(-field, -grader) %>%
   spread(fieldgrader, value, convert=TRUE)
 
+grading_data_allgrades_kappadata$dr_yesno__1
+
 library(irr)
-kappa2(grading_data_allgrades_kappadata[,5:6])
+kappa2(grading_data_allgrades_kappadata[,c(dr_yesno__1,dr_yesno__2)])
 # JK: I guess I don't love this syntax because hard to know what 5:6 is, whereas when you use the actual variable name then clearer.
 # Plus it doesn't give confidence intervals.
 # Trying out alternatives, then just picking one...
@@ -424,6 +428,7 @@ grading_data_allgrades_kappadata2 <- grading_data_allgrades_kappadata %>%
                                     # xtabs(data=grading_data_allgrades_kappadata2, ~study_id+camera)
   filter(num_perstudyideye==3 & !is.na(amd_yesno__1) & !is.na(amd_yesno__2) & !is.na(dr_yesno__1) & !is.na(dr_yesno__2))
 # Kappas on the same population (156 eyes)
+  # LL: I'm seeing 355 eyes?
 cohen.kappa(x=cbind(filter(grading_data_allgrades_kappadata2, camera=="peek")$amd_yesno__1, filter(grading_data_allgrades_kappadata2, camera=="peek")$amd_yesno__2), alpha=0.05)
 cohen.kappa(x=cbind(filter(grading_data_allgrades_kappadata2, camera=="pictor")$amd_yesno__1, filter(grading_data_allgrades_kappadata2, camera=="pictor")$amd_yesno__2), alpha=0.05)
 cohen.kappa(x=cbind(filter(grading_data_allgrades_kappadata2, camera=="inview")$amd_yesno__1, filter(grading_data_allgrades_kappadata2, camera=="inview")$amd_yesno__2), alpha=0.05)
@@ -675,6 +680,7 @@ xtabs(data=filter(alldata_final, camera=="peek"), ~glaucoma+glaucoma_final)
 
 
 ## bootstrapped 95% CI accounting for clustering of eyes 
+  # LL: error here (Error: "In metric: `sens`; `truth` and `estimate` levels must be equivalent. `truth`: 0, 1. `estimate`: 0")
 bs_sensspec_glaucoma <- map(bs$splits, ~as_tibble(.) %>% unnest %>% 
                          filter(!is.na(camera)) %>%
                          group_by(camera) %>% 
@@ -976,66 +982,66 @@ sum(pt_data$cataract_deg == 5, na.rm = TRUE)
 #peek time & discomfort
 peek_only <- alldata_final %>%
   filter(camera == "peek")
-summary(peek_only$seconds)
+summary(peek_only$time)
 summary(peek_only$discomfort)
 #inview time & discomfort
 inview_only <- alldata_final %>%
   filter(camera == "inview")
-summary(inview_only$seconds)
+summary(inview_only$time)
 summary(inview_only$discomfort)
 #pictor time & discomfort
 pictor_only <- alldata_final %>%
   filter(camera == "pictor")
-summary(pictor_only$seconds)
+summary(pictor_only$time)
 summary(pictor_only$discomfort)
 
 #image_clarity...number of eyes with:
 #...excellent clarity
-sum(peek_only$image_clarity_final == 4, na.rm = TRUE)
-sum(inview_only$image_clarity_final == 4, na.rm = TRUE)
-sum(pictor_only$image_clarity_final == 4, na.rm = TRUE)
+sum(peek_only$imageclarity_final == 4, na.rm = TRUE)
+sum(inview_only$imageclarity_final == 4, na.rm = TRUE)
+sum(pictor_only$imageclarity_final == 4, na.rm = TRUE)
 #...good clarity
-sum(peek_only$image_clarity_final == 3, na.rm = TRUE)
-sum(inview_only$image_clarity_final == 3, na.rm = TRUE)
-sum(pictor_only$image_clarity_final == 3, na.rm = TRUE)
+sum(peek_only$imageclarity_final == 3, na.rm = TRUE)
+sum(inview_only$imageclarity_final == 3, na.rm = TRUE)
+sum(pictor_only$imageclarity_final == 3, na.rm = TRUE)
 #...fair clarity
-sum(peek_only$image_clarity_final == 2, na.rm = TRUE)
-sum(inview_only$image_clarity_final == 2, na.rm = TRUE)
-sum(pictor_only$image_clarity_final == 2, na.rm = TRUE)
+sum(peek_only$imageclarity_final == 2, na.rm = TRUE)
+sum(inview_only$imageclarity_final == 2, na.rm = TRUE)
+sum(pictor_only$imageclarity_final == 2, na.rm = TRUE)
 #...poor clarity
-sum(peek_only$image_clarity_final == 1, na.rm = TRUE)
-sum(inview_only$image_clarity_final == 1, na.rm = TRUE)
-sum(pictor_only$image_clarity_final == 1, na.rm = TRUE)
+sum(peek_only$imageclarity_final == 1, na.rm = TRUE)
+sum(inview_only$imageclarity_final == 1, na.rm = TRUE)
+sum(pictor_only$imageclarity_final == 1, na.rm = TRUE)
 
 
 #photo quality...coverage of the optic nerve
 #fully vis
-sum(peek_only$nerve_final == 2, na.rm = TRUE)
-sum(inview_only$nerve_final == 2, na.rm = TRUE)
-sum(pictor_only$nerve_final == 2, na.rm = TRUE)
+sum(peek_only$nervecov_final == 2, na.rm = TRUE)
+sum(inview_only$nervecov_final == 2, na.rm = TRUE)
+sum(pictor_only$nervecov_final == 2, na.rm = TRUE)
 #partly vis
-sum(peek_only$nerve_final == 1, na.rm = TRUE)
-sum(inview_only$nerve_final == 1, na.rm = TRUE)
-sum(pictor_only$nerve_final == 1, na.rm = TRUE)
+sum(peek_only$nervecov_final == 1, na.rm = TRUE)
+sum(inview_only$nervecov_final == 1, na.rm = TRUE)
+sum(pictor_only$nervecov_final == 1, na.rm = TRUE)
 #absent
-sum(peek_only$nerve_final == 0, na.rm = TRUE)
-sum(inview_only$nerve_final == 0, na.rm = TRUE)
-sum(pictor_only$nerve_final == 0, na.rm = TRUE)
+sum(peek_only$nervecov_final == 0, na.rm = TRUE)
+sum(inview_only$nervecov_final == 0, na.rm = TRUE)
+sum(pictor_only$nervecov_final == 0, na.rm = TRUE)
 
 
 #photo quality...coverage of the macula
 #fully vis
-sum(peek_only$macula_final == 2, na.rm = TRUE)
-sum(inview_only$macula_final == 2, na.rm = TRUE)
-sum(pictor_only$macula_final == 2, na.rm = TRUE)
+sum(peek_only$maculacov_final == 2, na.rm = TRUE)
+sum(inview_only$maculacov_final == 2, na.rm = TRUE)
+sum(pictor_only$maculacov_final == 2, na.rm = TRUE)
 #partly vis
-sum(peek_only$macula_final == 1, na.rm = TRUE)
-sum(inview_only$macula_final == 1, na.rm = TRUE)
-sum(pictor_only$macula_final == 1, na.rm = TRUE)
+sum(peek_only$maculacov_final == 1, na.rm = TRUE)
+sum(inview_only$maculacov_final == 1, na.rm = TRUE)
+sum(pictor_only$maculacov_final == 1, na.rm = TRUE)
 #absent
-sum(peek_only$macula_final == 0, na.rm = TRUE)
-sum(inview_only$macula_final == 0, na.rm = TRUE)
-sum(pictor_only$macula_final == 0, na.rm = TRUE)
+sum(peek_only$maculacov_final == 0, na.rm = TRUE)
+sum(inview_only$maculacov_final == 0, na.rm = TRUE)
+sum(pictor_only$maculacov_final == 0, na.rm = TRUE)
 
 
 #photo quality...coverage of zone 2
@@ -1055,17 +1061,17 @@ sum(pictor_only$zone2_final == 0, na.rm = TRUE)
 
 #confidence in grading vcdr 
 #able, confident
-sum(peek_only$vcdr_confidence_final == 1, na.rm = TRUE)
-sum(inview_only$vcdr_confidence_final == 1, na.rm = TRUE)
-sum(pictor_only$vcdr_confidence_final == 1, na.rm = TRUE)
+sum(peek_only$vcdrconfidence_final == 1, na.rm = TRUE)
+sum(inview_only$vcdrconfidence_final == 1, na.rm = TRUE)
+sum(pictor_only$vcdrconfidence_final == 1, na.rm = TRUE)
 #able, NOT confident
-sum(peek_only$vcdr_confidence_final == 2, na.rm = TRUE)
-sum(inview_only$vcdr_confidence_final == 2, na.rm = TRUE)
-sum(pictor_only$vcdr_confidence_final == 2, na.rm = TRUE)
+sum(peek_only$vcdrconfidence_final == 2, na.rm = TRUE)
+sum(inview_only$vcdrconfidence_final == 2, na.rm = TRUE)
+sum(pictor_only$vcdrconfidence_final == 2, na.rm = TRUE)
 #unable to grade
-sum(peek_only$vcdr_confidence_final == 3, na.rm = TRUE)
-sum(inview_only$vcdr_confidence_final == 3, na.rm = TRUE)
-sum(pictor_only$vcdr_confidence_final == 3, na.rm = TRUE)
+sum(peek_only$vcdrconfidence_final == 3, na.rm = TRUE)
+sum(inview_only$vcdrconfidence_final == 3, na.rm = TRUE)
+sum(pictor_only$vcdrconfidence_final == 3, na.rm = TRUE)
 
 
 #total eyes with DR
@@ -1076,19 +1082,20 @@ eyes_data$dr[eyes_data$dr == 2] <- 1
 sum(eyes_data$dr, na.rm = TRUE)
 
 #eyes with mild or moderate NPDR
-sum(eyes_data$diagnosis_dr == 1, na.rm = TRUE)
+sum(eyes_data$dxdr == 1, na.rm = TRUE)
 #eyes with severe NPDR
-sum(eyes_data$diagnosis_dr == 2, na.rm = TRUE)
+sum(eyes_data$dxdr == 2, na.rm = TRUE)
 #eyes with PDR
-sum(eyes_data$diagnosis_dr == 3, na.rm = TRUE)
+sum(eyes_data$dxdr == 3, na.rm = TRUE)
 #eyes with unspecified DR
-sum(eyes_data$diagnosis_dr == 4, na.rm = TRUE)
+sum(eyes_data$dxdr == 4, na.rm = TRUE)
 
 #eyes with DME
 sum(eyes_data$dme, na.rm = TRUE)
 
 
 #total eyes with AMD
+  # LL: amd column is all 0's?! 
 eyes_data <- eyes_data %>%
   mutate(amd=as.numeric(amd))
 eyes_data$amd[eyes_data$amd == 1] <- 0
@@ -1096,13 +1103,13 @@ eyes_data$amd[eyes_data$amd == 2] <- 1
 sum(eyes_data$amd, na.rm = TRUE)
 
 #eyes with early amd
-sum(eyes_data$diagnosis_amd == 1, na.rm = TRUE)
+sum(eyes_data$dxamd == 1, na.rm = TRUE)
 #eyes with intermed amd
-sum(eyes_data$diagnosis_amd == 2, na.rm = TRUE)
+sum(eyes_data$dxamd == 2, na.rm = TRUE)
 #eyes with advanced amd
-sum(eyes_data$diagnosis_amd == 3, na.rm = TRUE)
+sum(eyes_data$dxamd == 3, na.rm = TRUE)
 #eyes with unspec amd
-sum(eyes_data$diagnosis_amd == 4, na.rm = TRUE)
+sum(eyes_data$dxamd == 4, na.rm = TRUE)
 
 
 #total eyes with glaucoma
@@ -1113,15 +1120,15 @@ eyes_data$glaucoma[eyes_data$glaucoma == 2] <- 1
 sum(eyes_data$glaucoma, na.rm = TRUE)
 
 #eyes with mild/early glauc
-sum(eyes_data$diagnosis_glaucoma == 1, na.rm = TRUE)
+sum(eyes_data$dxglaucoma == 1, na.rm = TRUE)
 #eyes with mod glauc
-sum(eyes_data$diagnosis_glaucoma == 2, na.rm = TRUE)
+sum(eyes_data$dxglaucoma == 2, na.rm = TRUE)
 #eyes with severe glauc
-sum(eyes_data$diagnosis_glaucoma == 3, na.rm = TRUE)
+sum(eyes_data$dxglaucoma == 3, na.rm = TRUE)
 #eyes with unspec glauc
-sum(eyes_data$diagnosis_glaucoma == 4, na.rm = TRUE)
+sum(eyes_data$dxglaucoma == 4, na.rm = TRUE)
 #eyes with NA info on glauc
-sum(eyes_data$diagnosis_glaucoma == 5, na.rm = TRUE)
+sum(eyes_data$dxglaucoma == 5, na.rm = TRUE)
 
 
 #total eyes with other dx
