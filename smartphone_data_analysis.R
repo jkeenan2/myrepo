@@ -12,9 +12,9 @@ library(dplyr)
 
 ##Read Digicards Data
 # JK: looks like cataract not recorded separately for each eye so not really sure how this will be useful 
-    #LL: Digicards didn't distinguish btwn OD/OS cataracts if I remember correctly (or else I assume I
-    #     would have separated them). I guess the data can be included in summary characteristics of eyes in 
-    #     Table 1.
+#LL: Digicards didn't distinguish btwn OD/OS cataracts if I remember correctly (or else I assume I
+#     would have separated them). I guess the data can be included in summary characteristics of eyes in 
+#     Table 1.
 # JK: missing data for 2 of them, I am filtering them out // LL: OK (complete set of photos not taken for these patients)
 redcapexport <- read_csv("SmartphoneRetinalScr_DATA_2019-09-10_0855.csv") %>%
   filter(study_id!=3807366 & study_id!=3746321) %>%
@@ -48,15 +48,15 @@ hospitalandphotoid_long <- hospitalandphotoid %>%
   gather(key = camera, value = photoid, peek:pictor) %>%
   group_by(study_id, eye, camera) %>%
   mutate(duph=n())
-  # select(-duph) 
-  # xtabs(data=hospitalandphotoid_long, ~duph, addNA=TRUE)
+# select(-duph) 
+# xtabs(data=hospitalandphotoid_long, ~duph, addNA=TRUE)
 
 # JK: There are 258 duplicates combinations of study_id, eye, and camera in this file. 
 # JK: There should be no duplicates before merging.
 # JK: Louisa, do you know what is going on here? Are these duplicates on purpose for intra-grader reliability or something?
 # JK: If so we need to designate which one is the official photo and which one is the duplicate.
-    # LL: these duplicates are patients who had their photos taken on 2 separate clinic visits.
-    # LL: perhaps we can select photos from just the last visit for these patients?
+# LL: these duplicates are patients who had their photos taken on 2 separate clinic visits.
+# LL: perhaps we can select photos from just the last visit for these patients?
 hdups <-   hospitalandphotoid_long %>%
   filter(duph>1)
 
@@ -66,8 +66,8 @@ redcapexport_long <- redcapexport %>%
   gather(key = field, value = value, dr_right:dxglaucoma_left) %>%
   separate(field, into=c("disease", "eye"), sep="_") %>%
   mutate(eye=case_when(eye=="right" ~ "RE",
-                   eye=="left" ~ "LE",
-                   TRUE ~ NA_character_)) %>%
+                       eye=="left" ~ "LE",
+                       TRUE ~ NA_character_)) %>%
   spread(disease, value, convert=TRUE) %>%
   select(peek_time:pictor_discomfort, inview_order:pictor_order, everything()) %>%
   gather(field, value, peek_time:pictor_order) %>%
@@ -75,8 +75,8 @@ redcapexport_long <- redcapexport %>%
   spread(var, value, convert=TRUE) %>%
   select(study_id, eye, camera, everything()) %>%
   group_by(study_id, eye, camera)
-  # mutate(dupr=n()) %>% # xtabs(data=redcapexport_long, ~dupr, addNA=TRUE)
-  # select(-dupr) 
+# mutate(dupr=n()) %>% # xtabs(data=redcapexport_long, ~dupr, addNA=TRUE)
+# select(-dupr) 
 # NO DUPLICATES
 
 # JK: Please notice that we now have unique id of study_id, eye, and camera for both the redcapexport_long and hospitalandphotoid_long objects.
@@ -96,7 +96,7 @@ redcapexport_long <- redcapexport %>%
 #   mutate(diagnosis_glaucoma_new = if_else(eye=="RE", diagnosis_glaucoma, diagnosis_glaucoma_left)) %>%
 #   select(-(dme_right:diagnosis_glaucoma_left)) %>%
 #   select(study_id, eye, everything())
-  
+
 
 #long-er data for cameras
 # JK: Not sure this is correct...
@@ -114,8 +114,8 @@ redcapexport_long <- redcapexport %>%
 
 # redcapexport_to_merge <- redcapexport_longer %>%
 #   select(study_id, eye, camera, photo_date, age, gender, cataract, cataract_deg, dr:seconds, discomfort)
-  
-  
+
+
 digicards_data <- full_join(redcapexport_long, hospitalandphotoid_long, by=c("study_id", "eye", "camera")) %>%
   mutate(photoid=as.character(photoid)) %>%
   filter(!is.na(photoid))
@@ -151,8 +151,8 @@ digicards_data <- digicards_data %>%
 
 
 # JK: Bad merges: Any idea what is going on with these?
-    # LL: these patients had photos taken in only one eye (but I recorded Digicards diagnoses for both eyes)
-    # LL: filtered these out from digicards_data (above)
+# LL: these patients had photos taken in only one eye (but I recorded Digicards diagnoses for both eyes)
+# LL: filtered these out from digicards_data (above)
 
 # badmerge_no_h <- digicards_data %>%
 #   filter(is.na(photoid))
@@ -188,44 +188,43 @@ grading_data_allgrades <- bind_rows(teams_import, adj_teams) %>%
   select(-new_photo_grading_form_complete) %>%
   # JK: PREFERRED TO USE IF_ELSE NOT IFELSE
   mutate(dr_yesno = if_else((dr == 0 | dr == 1), 0, 
-                    if_else((dr == 2 | dr == 3), 1, NA_real_)),
+                            if_else((dr == 2 | dr == 3), 1, NA_real_)),
          dme_yesno = if_else((dme == 0 | dme == 1), 0, 
-                            if_else((dme == 2 | dme == 3), 1, NA_real_)),
+                             if_else((dme == 2 | dme == 3), 1, NA_real_)),
          amd_yesno = if_else((amd == 0 | amd == 1), 0, 
                              # JK: THE XTABS NEEDS TO USE THE CORRECT DATA...
-                     if_else((amd == 2 | amd == 3), 1, NA_real_))) %>% # xtabs(data=grading_data, ~dr + dr_yesno, addNA=TRUE)
-                                                                       # xtabs(data=grading_data, ~amd + amd_yesno, addNA=TRUE)
+                             if_else((amd == 2 | amd == 3), 1, NA_real_))) %>% # xtabs(data=grading_data, ~dr + dr_yesno, addNA=TRUE)
+  # xtabs(data=grading_data, ~amd + amd_yesno, addNA=TRUE)
   separate(study_id, c("photoid", "grader"), sep = "--", remove = TRUE, convert = FALSE)
 
 grading_data_consensus <- grading_data_allgrades %>%
   group_by(photoid) %>%
   # JK: CHANGE THIS BACK to mutate to PROBLEMSOLVE
   summarize(numgraders=n(),
-         dr_final=median(dr_yesno),
-         numdrgrades=sum(!is.na(dr_yesno)),
-         dme_final=median(dme_yesno),
-         numdmegrades=sum(!is.na(dme_yesno)),
-         amd_final=median(amd_yesno),
-         numamdgrades=sum(!is.na(amd_yesno)),
-         cdr_final=median(cdr),
-         glaucoma_final=if_else(cdr_final>=0.7,1,0),
-         numcdrgrades=sum(!is.na(cdr)),
-         # JK: JUST DEFINING THE SEVERITY AS THE LEAST SEVERE; THIS SEEMS MOST CONSERVATIVE?
-         # JK: NOTE THAT IF DR==0 THEN SEVERITY IS MISSING NOT ZERO
-         # JK: I PLAYED AROUND WITH THE BEST WAY TO DEAL WITH VARIABLES WITH 3 OR MORE LEVELS 
-         # JK: THIS IS MEDIAN BUT TAKES LOWER VALUE IF A TIE BETWEN EVEN NUMBER
-         # NOTE THAT THIS DOES not RESTRICT ONLY TO DR YES; WE MAY WANT TO DO THAT
-         # drsev_final1=if_else(median(dr_yesno)==0,NA_real_,min(dr_severity)),
-         # drsev_final2=if_else(median(dr_yesno)==0,NA_real_,median(dr_severity)),
-         # (LL notes to self: https://www.rdocumentation.org/packages/stats/versions/3.6.1/topics/quantile)
-         drsev_final=if_else(median(dr_yesno)==0,NA_real_,quantile(dr_severity, probs = 0.5, type=3, na.rm=TRUE)),
-         amdsev_final=if_else(median(amd_yesno)==0,NA_real_,quantile(amd_severity, probs = 0.5, type=3, na.rm=TRUE)),
-         # amdsev_final=if_else(median(amd_yesno)==0,NA_real_,min(amd_severity)),
-         nervecov_final=quantile(nerve, probs = 0.5, type=3, na.rm=TRUE),
-         maculacov_final=quantile(macula, probs = 0.5, type=3, na.rm=TRUE),
-         zone2_final=quantile(zone2, probs = 0.5, type=3, na.rm=TRUE),
-         imageclarity_final=quantile(image_clarity, probs = 0.5, type=3, na.rm=TRUE),
-         vcdrconfidence_final=quantile(vcdr_confidence, probs = 0.5, type=3, na.rm=TRUE))
+            dr_final=median(dr_yesno),
+            numdrgrades=sum(!is.na(dr_yesno)),
+            dme_final=median(dme_yesno),
+            numdmegrades=sum(!is.na(dme_yesno)),
+            amd_final=median(amd_yesno),
+            numamdgrades=sum(!is.na(amd_yesno)),
+            cdr_final=median(cdr),
+            glaucoma_final=if_else(cdr_final>=0.7,1,0),
+            numcdrgrades=sum(!is.na(cdr)),
+            # JK: JUST DEFINING THE SEVERITY AS THE LEAST SEVERE; THIS SEEMS MOST CONSERVATIVE?
+            # JK: NOTE THAT IF DR==0 THEN SEVERITY IS MISSING NOT ZERO
+            # JK: I PLAYED AROUND WITH THE BEST WAY TO DEAL WITH VARIABLES WITH 3 OR MORE LEVELS 
+            # JK: THIS IS MEDIAN BUT TAKES LOWER VALUE IF A TIE BETWEN EVEN NUMBER
+            # NOTE THAT THIS DOES not RESTRICT ONLY TO DR YES; WE MAY WANT TO DO THAT
+            # drsev_final1=if_else(median(dr_yesno)==0,NA_real_,min(dr_severity)),
+            # drsev_final2=if_else(median(dr_yesno)==0,NA_real_,median(dr_severity)),
+            # (LL notes to self: https://www.rdocumentation.org/packages/stats/versions/3.6.1/topics/quantile)
+            drsev_final=if_else(median(dr_yesno)==0,NA_real_,quantile(dr_severity, probs = 0.5, type=3, na.rm=TRUE)),
+            amdsev_final=if_else(median(amd_yesno)==0,NA_real_,quantile(amd_severity, probs = 0.5, type=3, na.rm=TRUE)),
+            # amdsev_final=if_else(median(amd_yesno)==0,NA_real_,min(amd_severity)),
+            nervecov_final=recode_factor(quantile(nerve, probs = 0.5, type=3, na.rm=TRUE), `0`="None", `1`="Some", `2`="All"),
+            maculacov_final=recode_factor(quantile(macula, probs = 0.5, type=3, na.rm=TRUE), `0`="None", `1`="Some", `2`="All"),
+            imageclarity_final=quantile(image_clarity, probs = 0.5, type=3, na.rm=TRUE),
+            vcdrconfidence_final=quantile(vcdr_confidence, probs = 0.5, type=3, na.rm=TRUE))
 # JK: GENERALLY WE NEED AT LEAST 2 GRADES TO HAVE A CONSENSUS; INVESTIGATE WHEN only 1 GRADE...
 xtabs(data=grading_data_consensus, ~numdrgrades + dr_final, addNA=TRUE)
 xtabs(data=grading_data_consensus, ~numdmegrades + dme_final, addNA=TRUE)
@@ -234,14 +233,8 @@ xtabs(data=grading_data_consensus, ~numcdrgrades + cdr_final, addNA=TRUE)
 xtabs(data=grading_data_consensus, ~drsev_final + dr_final, addNA=TRUE)
 xtabs(data=grading_data_consensus, ~amdsev_final + amd_final, addNA=TRUE)
 
-
-clean_grading_data <- grading_data_consensus %>%
-  select(photoid, dr_final, drsev_final, dme_final, amd_final, amdsev_final, cdr_final, glaucoma_final, zone2_final, nervecov_final, maculacov_final, imageclarity_final, vcdrconfidence_final)
-
-
-
-# ts_needdme <- grading_data_consensus %>%
-#   filter(dme_final==0.5)
+ts_needdme <- grading_data_consensus %>%
+  filter(dme_final==0.5)
 # THere are 48 images that would need to be graded before a consensus DME grade could be given
 # LL: I don’t think grading for DME ended up being high yield at all, so I would be happy to just exclude DME from the analysis
 
@@ -249,29 +242,29 @@ clean_grading_data <- grading_data_consensus %>%
 # ONCE WE ARE DONE CLEANING WE CAN USE SUMMARIZE INSTEAD OF MUTATE...
 
 # JK: THE FOLLOWING CAN BE DELETED BUT LEAVING THE NOTES FOR YOU IN CASE YOU ARE INTERESTED...
-  # gather(field, value, image_clarity:notes, dr_yesno:amd_yesno) %>%
-  # mutate(field.grader=paste(field, grader, sep=".")) %>%
-  # select(-field, -grader) %>%
-  # # JK: YOUR SPREAD DIDN'T WORK CORRECTLY. YOU NEED TO CHECK IT TO MAKE SURE. ONE EASY WAY IS TO LOOK AT THE NUMBER
-  # # OF OBSERVATIONS. IT SHOULD HAVE HAD SOMEWHERE ON THE ORDER OF 1200 BUT YOURS HAD 1720. SO NEED TO INVESTIGATE.
-  # # I QUICKLY NOTED THAT THERE WERE DUPLICATE PHOTOIDs WHICH YOU DO NOT WANT. AND THAT THESE SEEM TO RESULT FROM A 
-  # # PROBLEM WITH THE --3 RECORDS
+# gather(field, value, image_clarity:notes, dr_yesno:amd_yesno) %>%
+# mutate(field.grader=paste(field, grader, sep=".")) %>%
+# select(-field, -grader) %>%
+# # JK: YOUR SPREAD DIDN'T WORK CORRECTLY. YOU NEED TO CHECK IT TO MAKE SURE. ONE EASY WAY IS TO LOOK AT THE NUMBER
+# # OF OBSERVATIONS. IT SHOULD HAVE HAD SOMEWHERE ON THE ORDER OF 1200 BUT YOURS HAD 1720. SO NEED TO INVESTIGATE.
+# # I QUICKLY NOTED THAT THERE WERE DUPLICATE PHOTOIDs WHICH YOU DO NOT WANT. AND THAT THESE SEEM TO RESULT FROM A 
+# # PROBLEM WITH THE --3 RECORDS
 
-    # LL: Thank you for leaving these notes in - helpful for learning!
+# LL: Thank you for leaving these notes in - helpful for learning!
 
-  # # IF YOU JUST SEARCH FOR 1001 YOU SEE THAT THE --3 RECORDS HAVE A NA FOR "TEAM". SO I ADDED A NEW VARIABLE TEAM TO YOUR ADJUDICATED OBJECTS ABOVE
-  # spread(field.grader, value, convert=TRUE) %>%
-  # mutate(dr_final = if_else((dr_yesno.1 != dr_yesno.2 & !is.na(dr_yesno.3)), dr_yesno.3, dr_yesno.1),
-  #        amd_final = if_else((amd_yesno.1 != amd_yesno.2 & !is.na(amd_yesno.3)), amd_yesno.3, amd_yesno.1),
-  #        # JK: I THINK WE DEFINED DISCREPANT AS >0.2, RIGHT? 
-  #        # JK: YOU COULD CONFIRM ON THE PREVIOUS CODE WE USED TO DECIDE WHICH PHOTOS TO INCLUDE IN THE ADJUDICATION PROJECT
-  #        cdr_final = if_else((abs(cdr.1-cdr.2)>.2) & !is.na(cdr.3), cdr.3, 
-  #                    if_else((abs(cdr.1-cdr.2)<=.2) & !is.na(cdr.3), ((cdr.1 + cdr.2 + cdr.3)/ 3), 
-  #                    if_else((abs(cdr.1-cdr.2)<=.2) & is.na(cdr.3), ((cdr.1 + cdr.2)/ 2), 999)))) # xtabs(data=grading_data, ~cdr_final, addNA=TRUE)
+# # IF YOU JUST SEARCH FOR 1001 YOU SEE THAT THE --3 RECORDS HAVE A NA FOR "TEAM". SO I ADDED A NEW VARIABLE TEAM TO YOUR ADJUDICATED OBJECTS ABOVE
+# spread(field.grader, value, convert=TRUE) %>%
+# mutate(dr_final = if_else((dr_yesno.1 != dr_yesno.2 & !is.na(dr_yesno.3)), dr_yesno.3, dr_yesno.1),
+#        amd_final = if_else((amd_yesno.1 != amd_yesno.2 & !is.na(amd_yesno.3)), amd_yesno.3, amd_yesno.1),
+#        # JK: I THINK WE DEFINED DISCREPANT AS >0.2, RIGHT? 
+#        # JK: YOU COULD CONFIRM ON THE PREVIOUS CODE WE USED TO DECIDE WHICH PHOTOS TO INCLUDE IN THE ADJUDICATION PROJECT
+#        cdr_final = if_else((abs(cdr.1-cdr.2)>.2) & !is.na(cdr.3), cdr.3, 
+#                    if_else((abs(cdr.1-cdr.2)<=.2) & !is.na(cdr.3), ((cdr.1 + cdr.2 + cdr.3)/ 3), 
+#                    if_else((abs(cdr.1-cdr.2)<=.2) & is.na(cdr.3), ((cdr.1 + cdr.2)/ 2), 999)))) # xtabs(data=grading_data, ~cdr_final, addNA=TRUE)
 
 
- # JK: note there are 2 types of records with missing dr_adj data: first, those with nonmissing grader 1 and 2 but missing grader3, and also those with missing grader 1 and 2 and 3
-  # Probably worth a double-check of the data to make sure this data is actually missing? Then we can drop the rows with completely missing data
+# JK: note there are 2 types of records with missing dr_adj data: first, those with nonmissing grader 1 and 2 but missing grader3, and also those with missing grader 1 and 2 and 3
+# Probably worth a double-check of the data to make sure this data is actually missing? Then we can drop the rows with completely missing data
 # LL: ^NA's for all 3 graders are for photoid's for photos that weren't taken (actually missing) or mistaken entries (i.e. 1153a, b, c, d)
 
 
@@ -309,7 +302,7 @@ clean_grading_data <- grading_data_consensus %>%
 #                              if_else(dr_final == 1 & (dr_severity.1>dr_severity.2), dr_severity.1, dr_severity.2))) %>%
 #   mutate(image_clarity_final = if_else(image_clarity.1>image_clarity.2, image_clarity.1, image_clarity.2)) %>%
 #   mutate(macula_final = if_else(macula.1>macula.2, macula.1, macula.2)) %>%
-#   mutate(nervecov_final = if_else(nerve.1>nerve.2, nerve.1, nerve.2)) %>%
+#   mutate(nerve_final = if_else(nerve.1>nerve.2, nerve.1, nerve.2)) %>%
 #   mutate(notes_final = paste(notes.1, notes.2, notes.3, sep="/")) %>%
 #   mutate(other_dx_detail_final = paste(other_dx_detail.1, other_dx_detail.2, other_dx_detail.3, sep="/")) %>%
 #   mutate(other_dx_final = if_else(other_dx.1>other_dx.2, other_dx.1, other_dx.2)) %>%
@@ -319,6 +312,11 @@ clean_grading_data <- grading_data_consensus %>%
 #   mutate(glaucoma_final = if_else(!is.na(cdr_final) & cdr_final >=0.7, 1, 0)) %>%
 #   mutate(other_dx_yesno = if_else((other_dx_final == 0 | other_dx_final == 1), 0,
 #                           if_else((other_dx_final == 2 | other_dx_final == 3), 1, 999)))
+
+
+clean_grading_data <- grading_data_consensus %>%
+  select(photoid, imageclarity_final, dr_final, drsev_final, dme_final, amd_final, amdsev_final, vcdrconfidence_final, cdr_final, glaucoma_final)
+
 
 #xtabs(data=grading_data, ~dr_yesno.1+dr_yesno.2, addNA=TRUE)
 #xtabs(data=grading_data, ~amd_yesno.1+amd_yesno.2, addNA=TRUE)
@@ -362,7 +360,7 @@ alldataofallgraders <- full_join(digicards_data, grading_data_allgrades, by="pho
 # JK For final analysis we need to make sure that we have nonmissing data for gold standard and adjudicated grade for all 3 cameras. 
 # Only include those observations that meet this criteria.
 # But confirm that we have incomplete data for these
-  # LL: checked patient log; confirmed these patients didn't have photos taken for 1+ cameras or an entire eye
+# LL: checked patient log; confirmed these patients didn't have photos taken for 1+ cameras or an entire eye
 missingdata <- as.data.frame(xtabs(data=filter(alldata, !is.na(dr_final) & !is.na(dr)), ~study_id+camera+eye)) %>%
   mutate(studyideye=paste(study_id, eye, sep="_")) %>%
   select(-study_id, -eye) %>%
@@ -386,7 +384,7 @@ alldata_final <- alldata %>%
   filter(num_of_obs == 3) 
 # xtabs(data=alldata_final, ~num_of_obs+camera, addNA=TRUE)
 # Should only be 3 observations per studyid_eye. So figure out what is going on.
-  # LL: the photoid's with >3 obs corresponded to patients with missing photos. Removed!
+# LL: these photoid's with 12 obs correspond to patients with missing photos. Removed!
 a <- alldata_final %>% ungroup() %>% filter(num_of_obs==3) %>% distinct(study_id) 
 b <- alldata_final %>% ungroup() %>% filter(num_of_obs==3) %>% distinct(studyid_eye)
 
@@ -404,10 +402,8 @@ grading_data_allgrades_kappadata <- alldataofallgraders %>%
   select(-field, -grader) %>%
   spread(fieldgrader, value, convert=TRUE)
 
-grading_data_allgrades_kappadata$dr_yesno__1
-
 library(irr)
-kappa2(grading_data_allgrades_kappadata[,c(dr_yesno__1,dr_yesno__2)])
+kappa2(grading_data_allgrades_kappadata[,5:6])
 # JK: I guess I don't love this syntax because hard to know what 5:6 is, whereas when you use the actual variable name then clearer.
 # Plus it doesn't give confidence intervals.
 # Trying out alternatives, then just picking one...
@@ -425,10 +421,9 @@ grading_data_allgrades_kappadata2 <- grading_data_allgrades_kappadata %>%
   filter(!(studyid_eye %in% incompletedatavector)) %>%
   group_by(studyid_eye) %>%
   mutate(num_perstudyideye=n()) %>% # xtabs(data=grading_data_allgrades_kappadata2, ~numperstudyideye+camera)
-                                    # xtabs(data=grading_data_allgrades_kappadata2, ~study_id+camera)
+  # xtabs(data=grading_data_allgrades_kappadata2, ~study_id+camera)
   filter(num_perstudyideye==3 & !is.na(amd_yesno__1) & !is.na(amd_yesno__2) & !is.na(dr_yesno__1) & !is.na(dr_yesno__2))
 # Kappas on the same population (156 eyes)
-  # LL: I'm seeing 355 eyes?
 cohen.kappa(x=cbind(filter(grading_data_allgrades_kappadata2, camera=="peek")$amd_yesno__1, filter(grading_data_allgrades_kappadata2, camera=="peek")$amd_yesno__2), alpha=0.05)
 cohen.kappa(x=cbind(filter(grading_data_allgrades_kappadata2, camera=="pictor")$amd_yesno__1, filter(grading_data_allgrades_kappadata2, camera=="pictor")$amd_yesno__2), alpha=0.05)
 cohen.kappa(x=cbind(filter(grading_data_allgrades_kappadata2, camera=="inview")$amd_yesno__1, filter(grading_data_allgrades_kappadata2, camera=="inview")$amd_yesno__2), alpha=0.05)
@@ -529,9 +524,9 @@ p_funs <- map(p, ~partial(quantile, probs = .x, na.rm = TRUE)) %>%
 
 # So finally here is the dataframe with the CIs
 bs_sensspec_dr <- map(bs$splits, ~as_tibble(.) %>% unnest %>% 
-                     filter(!is.na(camera)) %>%
-                     group_by(camera) %>% 
-                     class_metrics(., truth = dr, estimate = dr_final)) %>% 
+                        filter(!is.na(camera)) %>%
+                        group_by(camera) %>% 
+                        class_metrics(., truth = dr, estimate = dr_final)) %>% 
   bind_rows(.id = 'boots') %>%
   select(-.estimator) %>%
   spread(.metric, .estimate, convert=TRUE) %>%
@@ -604,9 +599,9 @@ xtabs(data=filter(alldata_final, camera=="peek"), ~amd+amd_final)
 
 ## bootstrapped 95% CI accounting for clustering of eyes 
 bs_sensspec_amd <- map(bs$splits, ~as_tibble(.) %>% unnest %>% 
-                        filter(!is.na(camera)) %>%
-                        group_by(camera) %>% 
-                        class_metrics(., truth = as.factor(amd), estimate = as.factor(amd_final))) %>% 
+                         filter(!is.na(camera)) %>%
+                         group_by(camera) %>% 
+                         class_metrics(., truth = as.factor(amd), estimate = as.factor(amd_final))) %>% 
   bind_rows(.id = 'boots') %>%
   select(-.estimator) %>%
   spread(.metric, .estimate, convert=TRUE) %>%
@@ -680,11 +675,10 @@ xtabs(data=filter(alldata_final, camera=="peek"), ~glaucoma+glaucoma_final)
 
 
 ## bootstrapped 95% CI accounting for clustering of eyes 
-  # LL: error here (Error: "In metric: `sens`; `truth` and `estimate` levels must be equivalent. `truth`: 0, 1. `estimate`: 0")
 bs_sensspec_glaucoma <- map(bs$splits, ~as_tibble(.) %>% unnest %>% 
-                         filter(!is.na(camera)) %>%
-                         group_by(camera) %>% 
-                         class_metrics(., truth = as.factor(glaucoma), estimate = as.factor(glaucoma_final))) %>% 
+                              filter(!is.na(camera)) %>%
+                              group_by(camera) %>% 
+                              class_metrics(., truth = as.factor(glaucoma), estimate = as.factor(glaucoma_final))) %>% 
   bind_rows(.id = 'boots') %>%
   select(-.estimator) %>%
   spread(.metric, .estimate, convert=TRUE) %>%
@@ -758,9 +752,9 @@ xtabs(data=filter(alldata_final, camera=="peek"), ~otherdx+other_dx_yesno)
 
 ## bootstrapped 95% CI accounting for clustering of eyes
 bs_sensspec_otherdx <- map(bs$splits, ~as_tibble(.) %>% unnest %>%
-                              filter(!is.na(camera)) %>%
-                              group_by(camera) %>%
-                              class_metrics(., truth = as.factor(otherdx), estimate = as.factor(other_dx_yesno))) %>%
+                             filter(!is.na(camera)) %>%
+                             group_by(camera) %>%
+                             class_metrics(., truth = as.factor(otherdx), estimate = as.factor(other_dx_yesno))) %>%
   bind_rows(.id = 'boots') %>%
   select(-.estimator) %>%
   spread(.metric, .estimate, convert=TRUE) %>%
@@ -831,9 +825,9 @@ xtabs(data=filter(nonprolif_dr_subset, camera=="peek"), ~dr+dr_final)
 
 # So finally here is the dataframe with the CIs
 bs_sensspec_nonprolif_dr_subset <- map(bs$splits, ~as_tibble(.) %>% unnest %>% 
-                        filter(!is.na(camera)) %>%
-                        group_by(camera) %>% 
-                        class_metrics(., truth = dr, estimate = dr_final)) %>% 
+                                         filter(!is.na(camera)) %>%
+                                         group_by(camera) %>% 
+                                         class_metrics(., truth = dr, estimate = dr_final)) %>% 
   bind_rows(.id = 'boots') %>%
   select(-.estimator) %>%
   spread(.metric, .estimate, convert=TRUE) %>%
@@ -910,9 +904,9 @@ xtabs(data=filter(earlyint_amd_subset, camera=="peek"), ~amd+amd_final)
 
 ## bootstrapped 95% CI accounting for clustering of eyes 
 bs_sensspec_earlyint_amd_subset <- map(bs$splits, ~as_tibble(.) %>% unnest %>% 
-                         filter(!is.na(camera)) %>%
-                         group_by(camera) %>% 
-                         class_metrics(., truth = as.factor(amd), estimate = as.factor(amd_final))) %>% 
+                                         filter(!is.na(camera)) %>%
+                                         group_by(camera) %>% 
+                                         class_metrics(., truth = as.factor(amd), estimate = as.factor(amd_final))) %>% 
   bind_rows(.id = 'boots') %>%
   select(-.estimator) %>%
   spread(.metric, .estimate, convert=TRUE) %>%
@@ -982,66 +976,66 @@ sum(pt_data$cataract_deg == 5, na.rm = TRUE)
 #peek time & discomfort
 peek_only <- alldata_final %>%
   filter(camera == "peek")
-summary(peek_only$time)
+summary(peek_only$seconds)
 summary(peek_only$discomfort)
 #inview time & discomfort
 inview_only <- alldata_final %>%
   filter(camera == "inview")
-summary(inview_only$time)
+summary(inview_only$seconds)
 summary(inview_only$discomfort)
 #pictor time & discomfort
 pictor_only <- alldata_final %>%
   filter(camera == "pictor")
-summary(pictor_only$time)
+summary(pictor_only$seconds)
 summary(pictor_only$discomfort)
 
 #image_clarity...number of eyes with:
 #...excellent clarity
-sum(peek_only$imageclarity_final == 4, na.rm = TRUE)
-sum(inview_only$imageclarity_final == 4, na.rm = TRUE)
-sum(pictor_only$imageclarity_final == 4, na.rm = TRUE)
+sum(peek_only$image_clarity_final == 4, na.rm = TRUE)
+sum(inview_only$image_clarity_final == 4, na.rm = TRUE)
+sum(pictor_only$image_clarity_final == 4, na.rm = TRUE)
 #...good clarity
-sum(peek_only$imageclarity_final == 3, na.rm = TRUE)
-sum(inview_only$imageclarity_final == 3, na.rm = TRUE)
-sum(pictor_only$imageclarity_final == 3, na.rm = TRUE)
+sum(peek_only$image_clarity_final == 3, na.rm = TRUE)
+sum(inview_only$image_clarity_final == 3, na.rm = TRUE)
+sum(pictor_only$image_clarity_final == 3, na.rm = TRUE)
 #...fair clarity
-sum(peek_only$imageclarity_final == 2, na.rm = TRUE)
-sum(inview_only$imageclarity_final == 2, na.rm = TRUE)
-sum(pictor_only$imageclarity_final == 2, na.rm = TRUE)
+sum(peek_only$image_clarity_final == 2, na.rm = TRUE)
+sum(inview_only$image_clarity_final == 2, na.rm = TRUE)
+sum(pictor_only$image_clarity_final == 2, na.rm = TRUE)
 #...poor clarity
-sum(peek_only$imageclarity_final == 1, na.rm = TRUE)
-sum(inview_only$imageclarity_final == 1, na.rm = TRUE)
-sum(pictor_only$imageclarity_final == 1, na.rm = TRUE)
+sum(peek_only$image_clarity_final == 1, na.rm = TRUE)
+sum(inview_only$image_clarity_final == 1, na.rm = TRUE)
+sum(pictor_only$image_clarity_final == 1, na.rm = TRUE)
 
 
 #photo quality...coverage of the optic nerve
 #fully vis
-sum(peek_only$nervecov_final == 2, na.rm = TRUE)
-sum(inview_only$nervecov_final == 2, na.rm = TRUE)
-sum(pictor_only$nervecov_final == 2, na.rm = TRUE)
+sum(peek_only$nerve_final == 2, na.rm = TRUE)
+sum(inview_only$nerve_final == 2, na.rm = TRUE)
+sum(pictor_only$nerve_final == 2, na.rm = TRUE)
 #partly vis
-sum(peek_only$nervecov_final == 1, na.rm = TRUE)
-sum(inview_only$nervecov_final == 1, na.rm = TRUE)
-sum(pictor_only$nervecov_final == 1, na.rm = TRUE)
+sum(peek_only$nerve_final == 1, na.rm = TRUE)
+sum(inview_only$nerve_final == 1, na.rm = TRUE)
+sum(pictor_only$nerve_final == 1, na.rm = TRUE)
 #absent
-sum(peek_only$nervecov_final == 0, na.rm = TRUE)
-sum(inview_only$nervecov_final == 0, na.rm = TRUE)
-sum(pictor_only$nervecov_final == 0, na.rm = TRUE)
+sum(peek_only$nerve_final == 0, na.rm = TRUE)
+sum(inview_only$nerve_final == 0, na.rm = TRUE)
+sum(pictor_only$nerve_final == 0, na.rm = TRUE)
 
 
 #photo quality...coverage of the macula
 #fully vis
-sum(peek_only$maculacov_final == 2, na.rm = TRUE)
-sum(inview_only$maculacov_final == 2, na.rm = TRUE)
-sum(pictor_only$maculacov_final == 2, na.rm = TRUE)
+sum(peek_only$macula_final == 2, na.rm = TRUE)
+sum(inview_only$macula_final == 2, na.rm = TRUE)
+sum(pictor_only$macula_final == 2, na.rm = TRUE)
 #partly vis
-sum(peek_only$maculacov_final == 1, na.rm = TRUE)
-sum(inview_only$maculacov_final == 1, na.rm = TRUE)
-sum(pictor_only$maculacov_final == 1, na.rm = TRUE)
+sum(peek_only$macula_final == 1, na.rm = TRUE)
+sum(inview_only$macula_final == 1, na.rm = TRUE)
+sum(pictor_only$macula_final == 1, na.rm = TRUE)
 #absent
-sum(peek_only$maculacov_final == 0, na.rm = TRUE)
-sum(inview_only$maculacov_final == 0, na.rm = TRUE)
-sum(pictor_only$maculacov_final == 0, na.rm = TRUE)
+sum(peek_only$macula_final == 0, na.rm = TRUE)
+sum(inview_only$macula_final == 0, na.rm = TRUE)
+sum(pictor_only$macula_final == 0, na.rm = TRUE)
 
 
 #photo quality...coverage of zone 2
@@ -1061,17 +1055,17 @@ sum(pictor_only$zone2_final == 0, na.rm = TRUE)
 
 #confidence in grading vcdr 
 #able, confident
-sum(peek_only$vcdrconfidence_final == 1, na.rm = TRUE)
-sum(inview_only$vcdrconfidence_final == 1, na.rm = TRUE)
-sum(pictor_only$vcdrconfidence_final == 1, na.rm = TRUE)
+sum(peek_only$vcdr_confidence_final == 1, na.rm = TRUE)
+sum(inview_only$vcdr_confidence_final == 1, na.rm = TRUE)
+sum(pictor_only$vcdr_confidence_final == 1, na.rm = TRUE)
 #able, NOT confident
-sum(peek_only$vcdrconfidence_final == 2, na.rm = TRUE)
-sum(inview_only$vcdrconfidence_final == 2, na.rm = TRUE)
-sum(pictor_only$vcdrconfidence_final == 2, na.rm = TRUE)
+sum(peek_only$vcdr_confidence_final == 2, na.rm = TRUE)
+sum(inview_only$vcdr_confidence_final == 2, na.rm = TRUE)
+sum(pictor_only$vcdr_confidence_final == 2, na.rm = TRUE)
 #unable to grade
-sum(peek_only$vcdrconfidence_final == 3, na.rm = TRUE)
-sum(inview_only$vcdrconfidence_final == 3, na.rm = TRUE)
-sum(pictor_only$vcdrconfidence_final == 3, na.rm = TRUE)
+sum(peek_only$vcdr_confidence_final == 3, na.rm = TRUE)
+sum(inview_only$vcdr_confidence_final == 3, na.rm = TRUE)
+sum(pictor_only$vcdr_confidence_final == 3, na.rm = TRUE)
 
 
 #total eyes with DR
@@ -1082,20 +1076,19 @@ eyes_data$dr[eyes_data$dr == 2] <- 1
 sum(eyes_data$dr, na.rm = TRUE)
 
 #eyes with mild or moderate NPDR
-sum(eyes_data$dxdr == 1, na.rm = TRUE)
+sum(eyes_data$diagnosis_dr == 1, na.rm = TRUE)
 #eyes with severe NPDR
-sum(eyes_data$dxdr == 2, na.rm = TRUE)
+sum(eyes_data$diagnosis_dr == 2, na.rm = TRUE)
 #eyes with PDR
-sum(eyes_data$dxdr == 3, na.rm = TRUE)
+sum(eyes_data$diagnosis_dr == 3, na.rm = TRUE)
 #eyes with unspecified DR
-sum(eyes_data$dxdr == 4, na.rm = TRUE)
+sum(eyes_data$diagnosis_dr == 4, na.rm = TRUE)
 
 #eyes with DME
 sum(eyes_data$dme, na.rm = TRUE)
 
 
 #total eyes with AMD
-  # LL: amd column is all 0's?! 
 eyes_data <- eyes_data %>%
   mutate(amd=as.numeric(amd))
 eyes_data$amd[eyes_data$amd == 1] <- 0
@@ -1103,13 +1096,13 @@ eyes_data$amd[eyes_data$amd == 2] <- 1
 sum(eyes_data$amd, na.rm = TRUE)
 
 #eyes with early amd
-sum(eyes_data$dxamd == 1, na.rm = TRUE)
+sum(eyes_data$diagnosis_amd == 1, na.rm = TRUE)
 #eyes with intermed amd
-sum(eyes_data$dxamd == 2, na.rm = TRUE)
+sum(eyes_data$diagnosis_amd == 2, na.rm = TRUE)
 #eyes with advanced amd
-sum(eyes_data$dxamd == 3, na.rm = TRUE)
+sum(eyes_data$diagnosis_amd == 3, na.rm = TRUE)
 #eyes with unspec amd
-sum(eyes_data$dxamd == 4, na.rm = TRUE)
+sum(eyes_data$diagnosis_amd == 4, na.rm = TRUE)
 
 
 #total eyes with glaucoma
@@ -1120,15 +1113,15 @@ eyes_data$glaucoma[eyes_data$glaucoma == 2] <- 1
 sum(eyes_data$glaucoma, na.rm = TRUE)
 
 #eyes with mild/early glauc
-sum(eyes_data$dxglaucoma == 1, na.rm = TRUE)
+sum(eyes_data$diagnosis_glaucoma == 1, na.rm = TRUE)
 #eyes with mod glauc
-sum(eyes_data$dxglaucoma == 2, na.rm = TRUE)
+sum(eyes_data$diagnosis_glaucoma == 2, na.rm = TRUE)
 #eyes with severe glauc
-sum(eyes_data$dxglaucoma == 3, na.rm = TRUE)
+sum(eyes_data$diagnosis_glaucoma == 3, na.rm = TRUE)
 #eyes with unspec glauc
-sum(eyes_data$dxglaucoma == 4, na.rm = TRUE)
+sum(eyes_data$diagnosis_glaucoma == 4, na.rm = TRUE)
 #eyes with NA info on glauc
-sum(eyes_data$dxglaucoma == 5, na.rm = TRUE)
+sum(eyes_data$diagnosis_glaucoma == 5, na.rm = TRUE)
 
 
 #total eyes with other dx
