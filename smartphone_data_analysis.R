@@ -56,7 +56,7 @@ hospitalandphotoid_long <- hospitalandphotoid %>%
 # JK: Louisa, do you know what is going on here? Are these duplicates on purpose for intra-grader reliability or something?
 # JK: If so we need to designate which one is the official photo and which one is the duplicate.
     # LL: these duplicates are patients who had their photos taken on 2 separate clinic visits.
-    # LL: perhaps we can select photos from just the 1st visit for these patients?
+    # LL: perhaps we can select photos from just the last visit for these patients?
 hdups <-   hospitalandphotoid_long %>%
   filter(duph>1)
 
@@ -120,6 +120,35 @@ digicards_data <- full_join(redcapexport_long, hospitalandphotoid_long, by=c("st
   mutate(photoid=as.character(photoid)) %>%
   filter(!is.na(photoid))
 # JK: Note that the digicards_data includes the 258 duplicates from the hospitalandphotoid_long file; these need to be fixed in some way
+
+# *** filtered out duplicate photos (keeping only photos taken on the last clinic visit; unfortunately I kept only the last clinic date
+#       in Digicards, so couldn't automate this with code and had to do this manually via photoid's from my patient log spreadsheet)
+digicards_data <- digicards_data %>%
+  filter(!(photoid == "1943" | photoid == "1118" | photoid == "3240" | photoid == "2079" | photoid == "1229" | photoid == "1034")) %>%
+  filter(!(photoid == "3103" | photoid == "1308" | photoid == "3108" | photoid == "3624" | photoid == "1784" | photoid == "1493")) %>%
+  filter(!(photoid == "3439" | photoid == "1174" | photoid == "2368" | photoid == "1947" | photoid == "3218" | photoid == "1215")) %>%
+  filter(!(photoid == "3903" | photoid == "2229" | photoid == "3130" | photoid == "1287" | photoid == "1506" | photoid == "3686")) %>%
+  filter(!(photoid == "2895" | photoid == "2920" | photoid == "1966" | photoid == "1804" | photoid == "3115" | photoid == "1149")) %>%
+  filter(!(photoid == "1008" | photoid == "1586" | photoid == "3505" | photoid == "2884" | photoid == "1455" | photoid == "3443")) %>%
+  filter(!(photoid == "1943" | photoid == "1118" | photoid == "3240" | photoid == "2079" | photoid == "1229" | photoid == "1034")) %>%
+  filter(!(photoid == "2858" | photoid == "3808" | photoid == "2297" | photoid == "1078" | photoid == "3274" | photoid == "2896")) %>%
+  filter(!(photoid == "3763" | photoid == "3201" | photoid == "3970" | photoid == "3668" | photoid == "2429" | photoid == "2588")) %>%
+  filter(!(photoid == "1582" | photoid == "2806" | photoid == "2616" | photoid == "2056" | photoid == "2631" | photoid == "2590")) %>%
+  filter(!(photoid == "2058" | photoid == "2419" | photoid == "1988" | photoid == "2992" | photoid == "2213" | photoid == "3135")) %>%
+  filter(!(photoid == "2556" | photoid == "3577" | photoid == "1870" | photoid == "2583" | photoid == "3395" | photoid == "2527")) %>%
+  filter(!(photoid == "1713" | photoid == "1967" | photoid == "3587" | photoid == "3347" | photoid == "3464" | photoid == "3422")) %>%
+  filter(!(photoid == "3383" | photoid == "2469" | photoid == "1672" | photoid == "1684" | photoid == "1237" | photoid == "1540")) %>%
+  filter(!(photoid == "1810" | photoid == "1680" | photoid == "2488" | photoid == "1635" | photoid == "3194" | photoid == "2796")) %>%
+  filter(!(photoid == "3266" | photoid == "2909" | photoid == "1838" | photoid == "1616" | photoid == "1222" | photoid == "2242")) %>%
+  filter(!(photoid == "3364" | photoid == "3681" | photoid == "1550" | photoid == "3716" | photoid == "3898" | photoid == "3811")) %>%
+  filter(!(photoid == "1946" | photoid == "3015" | photoid == "2517" | photoid == "2809" | photoid == "1969" | photoid == "3528")) %>%
+  filter(!(photoid == "2547" | photoid == "2679" | photoid == "2550" | photoid == "1245" | photoid == "3209" | photoid == "3592")) %>%
+  filter(!(photoid == "3442" | photoid == "1138" | photoid == "1407" | photoid == "2833" | photoid == "1249" | photoid == "3434")) %>%
+  filter(!(photoid == "2050" | photoid == "2510" | photoid == "2413" | photoid == "2205" | photoid == "2246" | photoid == "2981")) %>%
+  filter(!(photoid == "2363" | photoid == "2496" | photoid == "3913" | photoid == "2255" | photoid == "1218" | photoid == "3032")) %>%
+  filter(!(photoid == "1809" | photoid == "1137" | photoid == "2198" | photoid == "2296" | photoid == "3562" | photoid == "2761")) %>%
+  select(-duph)
+
 
 # JK: Bad merges: Any idea what is going on with these?
     # LL: these patients had photos taken in only one eye (but I recorded Digicards diagnoses for both eyes)
@@ -188,9 +217,10 @@ grading_data_consensus <- grading_data_allgrades %>%
          # NOTE THAT THIS DOES not RESTRICT ONLY TO DR YES; WE MAY WANT TO DO THAT
          # drsev_final1=if_else(median(dr_yesno)==0,NA_real_,min(dr_severity)),
          # drsev_final2=if_else(median(dr_yesno)==0,NA_real_,median(dr_severity)),
+         # (LL notes to self: https://www.rdocumentation.org/packages/stats/versions/3.6.1/topics/quantile)
          drsev_final=if_else(median(dr_yesno)==0,NA_real_,quantile(dr_severity, probs = 0.5, type=3, na.rm=TRUE)),
          amdsev_final=if_else(median(amd_yesno)==0,NA_real_,quantile(amd_severity, probs = 0.5, type=3, na.rm=TRUE)),
-         amdsev_final=if_else(median(amd_yesno)==0,NA_real_,min(amd_severity)),
+         # amdsev_final=if_else(median(amd_yesno)==0,NA_real_,min(amd_severity)),
          nervecov_final=recode_factor(quantile(nerve, probs = 0.5, type=3, na.rm=TRUE), `0`="None", `1`="Some", `2`="All"),
          maculacov_final=recode_factor(quantile(macula, probs = 0.5, type=3, na.rm=TRUE), `0`="None", `1`="Some", `2`="All"),
          imageclarity_final=quantile(image_clarity, probs = 0.5, type=3, na.rm=TRUE),
@@ -206,6 +236,8 @@ xtabs(data=grading_data_consensus, ~amdsev_final + amd_final, addNA=TRUE)
 ts_needdme <- grading_data_consensus %>%
   filter(dme_final==0.5)
 # THere are 48 images that would need to be graded before a consensus DME grade could be given
+# LL: I don’t think grading for DME ended up being high yield at all, so I would be happy to just exclude DME from the analysis
+
 
 # ONCE WE ARE DONE CLEANING WE CAN USE SUMMARIZE INSTEAD OF MUTATE...
 
@@ -217,6 +249,9 @@ ts_needdme <- grading_data_consensus %>%
   # # OF OBSERVATIONS. IT SHOULD HAVE HAD SOMEWHERE ON THE ORDER OF 1200 BUT YOURS HAD 1720. SO NEED TO INVESTIGATE.
   # # I QUICKLY NOTED THAT THERE WERE DUPLICATE PHOTOIDs WHICH YOU DO NOT WANT. AND THAT THESE SEEM TO RESULT FROM A 
   # # PROBLEM WITH THE --3 RECORDS
+
+    # LL: Thank you for leaving these notes in - helpful for learning!
+
   # # IF YOU JUST SEARCH FOR 1001 YOU SEE THAT THE --3 RECORDS HAVE A NA FOR "TEAM". SO I ADDED A NEW VARIABLE TEAM TO YOUR ADJUDICATED OBJECTS ABOVE
   # spread(field.grader, value, convert=TRUE) %>%
   # mutate(dr_final = if_else((dr_yesno.1 != dr_yesno.2 & !is.na(dr_yesno.3)), dr_yesno.3, dr_yesno.1),
@@ -293,12 +328,39 @@ clean_grading_data <- grading_data_consensus %>%
 alldata <- full_join(digicards_data, clean_grading_data, by="photoid") %>%
   arrange(study_id, eye, camera)
 
+# removing duplicate patient sets of photos
+alldata <- alldata %>%
+  filter(!(photoid == "1943" | photoid == "1118" | photoid == "3240" | photoid == "2079" | photoid == "1229" | photoid == "1034")) %>%
+  filter(!(photoid == "3103" | photoid == "1308" | photoid == "3108" | photoid == "3624" | photoid == "1784" | photoid == "1493")) %>%
+  filter(!(photoid == "3439" | photoid == "1174" | photoid == "2368" | photoid == "1947" | photoid == "3218" | photoid == "1215")) %>%
+  filter(!(photoid == "3903" | photoid == "2229" | photoid == "3130" | photoid == "1287" | photoid == "1506" | photoid == "3686")) %>%
+  filter(!(photoid == "2895" | photoid == "2920" | photoid == "1966" | photoid == "1804" | photoid == "3115" | photoid == "1149")) %>%
+  filter(!(photoid == "1008" | photoid == "1586" | photoid == "3505" | photoid == "2884" | photoid == "1455" | photoid == "3443")) %>%
+  filter(!(photoid == "1943" | photoid == "1118" | photoid == "3240" | photoid == "2079" | photoid == "1229" | photoid == "1034")) %>%
+  filter(!(photoid == "2858" | photoid == "3808" | photoid == "2297" | photoid == "1078" | photoid == "3274" | photoid == "2896")) %>%
+  filter(!(photoid == "3763" | photoid == "3201" | photoid == "3970" | photoid == "3668" | photoid == "2429" | photoid == "2588")) %>%
+  filter(!(photoid == "1582" | photoid == "2806" | photoid == "2616" | photoid == "2056" | photoid == "2631" | photoid == "2590")) %>%
+  filter(!(photoid == "2058" | photoid == "2419" | photoid == "1988" | photoid == "2992" | photoid == "2213" | photoid == "3135")) %>%
+  filter(!(photoid == "2556" | photoid == "3577" | photoid == "1870" | photoid == "2583" | photoid == "3395" | photoid == "2527")) %>%
+  filter(!(photoid == "1713" | photoid == "1967" | photoid == "3587" | photoid == "3347" | photoid == "3464" | photoid == "3422")) %>%
+  filter(!(photoid == "3383" | photoid == "2469" | photoid == "1672" | photoid == "1684" | photoid == "1237" | photoid == "1540")) %>%
+  filter(!(photoid == "1810" | photoid == "1680" | photoid == "2488" | photoid == "1635" | photoid == "3194" | photoid == "2796")) %>%
+  filter(!(photoid == "3266" | photoid == "2909" | photoid == "1838" | photoid == "1616" | photoid == "1222" | photoid == "2242")) %>%
+  filter(!(photoid == "3364" | photoid == "3681" | photoid == "1550" | photoid == "3716" | photoid == "3898" | photoid == "3811")) %>%
+  filter(!(photoid == "1946" | photoid == "3015" | photoid == "2517" | photoid == "2809" | photoid == "1969" | photoid == "3528")) %>%
+  filter(!(photoid == "2547" | photoid == "2679" | photoid == "2550" | photoid == "1245" | photoid == "3209" | photoid == "3592")) %>%
+  filter(!(photoid == "3442" | photoid == "1138" | photoid == "1407" | photoid == "2833" | photoid == "1249" | photoid == "3434")) %>%
+  filter(!(photoid == "2050" | photoid == "2510" | photoid == "2413" | photoid == "2205" | photoid == "2246" | photoid == "2981")) %>%
+  filter(!(photoid == "2363" | photoid == "2496" | photoid == "3913" | photoid == "2255" | photoid == "1218" | photoid == "3032")) %>%
+  filter(!(photoid == "1809" | photoid == "1137" | photoid == "2198" | photoid == "2296" | photoid == "3562" | photoid == "2761")) 
+
 alldataofallgraders <- full_join(digicards_data, grading_data_allgrades, by="photoid") %>%
   arrange(study_id, eye, camera)
 
 # JK For final analysis we need to make sure that we have nonmissing data for gold standard and adjudicated grade for all 3 cameras. 
 # Only include those observations that meet this criteria.
 # But confirm that we have incomplete data for these
+  # LL: checked patient log; confirmed these patients didn't have photos taken for 1+ cameras or an entire eye
 missingdata <- as.data.frame(xtabs(data=filter(alldata, !is.na(dr_final) & !is.na(dr)), ~study_id+camera+eye)) %>%
   mutate(studyideye=paste(study_id, eye, sep="_")) %>%
   select(-study_id, -eye) %>%
@@ -318,10 +380,15 @@ alldata_final <- alldata %>%
          dr_final=as.factor(dr_final)) %>%
   filter(!(studyid_eye %in% incompletedatavector)) %>%
   group_by(studyid_eye) %>%
-  mutate(num_of_obs=n()) # xtabs(data=alldata_final, ~num_of_obs+camera, addNA=TRUE)
+  mutate(num_of_obs=n()) %>%
+  filter(num_of_obs == 3) 
+# xtabs(data=alldata_final, ~num_of_obs+camera, addNA=TRUE)
 # Should only be 3 observations per studyid_eye. So figure out what is going on.
+  # LL: these photoid's with 12 obs correspond to patients with missing photos. Removed!
 a <- alldata_final %>% ungroup() %>% filter(num_of_obs==3) %>% distinct(study_id) 
 b <- alldata_final %>% ungroup() %>% filter(num_of_obs==3) %>% distinct(studyid_eye)
+
+
 ################################
 ##          ANALYSES          ##
 ################################
