@@ -1,7 +1,3 @@
-#Clear existing redcapexport and graphics
-rm(list=ls())
-graphics.off()
-
 #Load Hmisc library
 #library(Hmisc)
 library(readr)
@@ -14,7 +10,6 @@ library(lubridate)
 library(survival)
 library(survminer)
 library(coxphf)
-library(dplyr)
 library(skimr)
 library(broom)
 library(eq5d)
@@ -144,12 +139,23 @@ cmvrdata <- redcapexport %>%
                      if_else(!is.na(new_cd4_date), new_cd4_date, as_date(NA) ))))),
          female=if_else(gender==1,1,if_else(gender==2,0,NA_real_))) %>%
   group_by(studyid) %>%
-  mutate(timesincehiv = as.numeric((if_else(!is.na(hivdx_date), min(exam_date, na.rm=TRUE) - hivdx_date, 
-                        if_else(hiv_dxdate3==1, hivdx_date2*(365/12), 
-                        if_else(hiv_dxdate3==2, hivdx_date2*365, 999))))/(365/12)),
+  mutate(newhivdate=(if_else(!is.na(hivdx_date), min(hivdx_date, na.rm=TRUE),
+                     if_else(hiv_dxdate3==1, (exam_date - (hivdx_date2*(365/12))), 
+                     if_else(hiv_dxdate3==2, (exam_date - (hivdx_date2*365)), as.Date(NA))))),
+         newhivdate=min(newhivdate, na.rm=TRUE),
+         monthssincehiv=as.numeric((exam_date-newhivdate)/(365/12)),
+         newhaartdate=(if_else(!is.na(haart_date), min(haart_date, na.rm=TRUE),
+                       if_else(haart_date3==1, (exam_date - (haart_date2*(365/12))), 
+                       if_else(haart_date3==2, (exam_date - (haart_date2*365)), as.Date(NA))))),
+         newhaartdate=min(newhaartdate, na.rm=TRUE),
+         monthssincehaart=as.numeric((exam_date-newhaartdate)/(365/12)),
+         haart=if_else(monthssincehaart<0,0,haart),
+         monthssincehaart=if_else(monthssincehaart==-Inf | monthssincehaart<0,0,monthssincehaart),
          fu_os_cmv=if_else(studyid=="C128" & redcap_week==44,2,fu_os_cmv)) %>%
   ungroup()
 
+ts <- cmvrdata %>%
+  select(studyid, exam_date, haart, hivdx_date, hivdx_date2, hiv_dxdate3, newhivdate, monthssincehiv, monthssincehaart, exam_date, haart_date, haart_date2, haart_date3)
 
 # Need Louisa to look these up
 missingexamdate <- cmvrdata %>%
@@ -229,8 +235,8 @@ progdata2 <- full_join(progdata, photonames, by="newname")
 
 #next step: make sure eyes are correlated...bootstrapping (observations aren't quite independent)
 cmvrdatalong <- cmvrdata %>%
-  select(studyid, redcap_week, exam_date, age, female, hivdx, timesincehiv, haart, new_cd4_count, new_cd4_date, date1, date2, date3, 
-         fu_date, eq5score, od_symp:os_va_ph_other, od_cmv:os_tx_other, fu_od_va_unc:fu_os_va_ph_other, fu_od_cmv:fu_os_tx_other ) %>%
+  select(studyid, redcap_week, exam_date, age, female, hivdx, monthssincehiv, haart, monthssincehaart, new_cd4_count, new_cd4_date, date1, date2, date3, 
+         fu_date, eq5score, hk1:hk24, od_symp:os_va_ph_other, od_cmv:os_tx_other, fu_od_va_unc:fu_os_va_ph_other, fu_od_cmv:fu_os_tx_other ) %>%
   gather(origfield, value, c(od_symp:os_va_ph_other, od_cmv:os_tx_other, fu_od_va_unc:fu_os_va_ph_other, fu_od_cmv:fu_os_tx_other)) %>%
   mutate(os=str_extract(origfield, "os_"),
          od=str_extract(origfield, "od_"),
@@ -327,7 +333,6 @@ cmvrdatalong <- cmvrdata %>%
          age=min(age, na.rm=TRUE),
          female=min(female, na.rm=TRUE),
          haart=max(haart, na.rm=TRUE),
-         timesincehiv=min(timesincehiv, na.rm=TRUE),
          hivdx=max(hivdx, na.rm=TRUE),
          mostpostzone = if_else(cmv_zones___1==1, 1,
                         if_else(cmv_zones___2==1, 2,
@@ -393,7 +398,7 @@ cdl.wrongorder.rri <- cmvrdatalong %>%
          minrridiff=min(redinstance.diff)) %>%
   filter(minrridiff<0) %>%
     select(studyid, eye, exam_date, redcap_week, redcap_repeat_instance, redinstance.diff, minrridiff, o.originalname)
-write_csv(cdl.wrongorder.rri, "cdl.wrongorder.rri.csv")
+# write_csv(cdl.wrongorder.rri, "cdl.wrongorder.rri.csv")
 cmv.ts <- cmvrdata %>%
   filter(studyid=="C1") %>%
   select(studyid, redcap_event_name, exam_date, fu_date, redcap_week, fu_od_cmv, new_cd4_count, new_cd4_date, hk1)
@@ -404,7 +409,7 @@ xtabs(data=cdl.wrongorder.rri, ~studyid+eye)
 # Note that firstcmv.data.all has all eyes, regardless of whether they were a "first eye" or "second eye"
 firstcmv.data.all <- cmvrdatalong %>%
   filter(hivdx==1 & new_cmv==1 & exam_date==first_cmvr_date_eye) %>%
-  select(studyid, age, female, hivdx, timesincehiv, haart, new_cd4_count, uni_vi, bi_vi, uni_blind, bi_blind, 
+  select(studyid, age, female, hivdx, monthssincehiv, haart, monthssincehaart, new_cd4_count, uni_vi, bi_vi, uni_blind, bi_blind, 
          eye, exam_date, redcap_week, redcap_repeat_instance, new_cmv, second_eye, time_to_secondeye, first_eye, first_cmvr_date_patient, 
          rd_developed, time_to_rd, visit_laterality, percentretina, percentretina2, logmar, 
          mostpostzone, mostpostzone1, mostantzone, mostantzone2, new_vithaze, new_rd, induction, maintenance, observation, othertx, 
@@ -421,10 +426,20 @@ firstcmv.data.all <- cmvrdatalong %>%
          cd4_lt100=if_else(new_cd4_count<100,1,0),
          cd4_lt100=if_else(is.na(new_cd4_count),0,cd4_lt100),
          va.2060=if_else(logmar>0.47712125471966,1,0),
-         va.20400=if_else(logmar>1.301029995664,1,0)) %>%
+         va.20400=if_else(logmar>1.301029995664,1,0),
+         haart.1mon=if_else(monthssincehaart>1,1,0),
+         haart.3mon=if_else(monthssincehaart>3,1,0),
+         haart.3monorless=if_else(monthssincehaart<=3,1,0),
+         haart.6mon=if_else(monthssincehaart>6,1,0),
+         hiv.1mon=if_else(monthssincehiv>1,1,0),
+         hiv.3mon=if_else(monthssincehiv>3,1,0),
+         hiv.6mon=if_else(monthssincehiv>6,1,0)) %>%
   ungroup() 
 
-
+ts <- cmvrdatalong %>%
+  filter(studyid=="C33") %>%
+  select(hivdx, new_cmv, exam_date, first_cmvr_date_eye, monthssincehaart, monthssincehiv)
+  
   
 #Then this just restricts to only the first eyes, which is what we want for 
 firstcmv.data <- firstcmv.data.all %>%
@@ -460,37 +475,81 @@ skim(firstcmv.data.patient$time_in_cmvfu_patient)
 # Table 2: Baseline patient characteristics:
 table2 <- firstcmv.data.patient %>%
   group_by(ltfu3) %>%
-  summarize(count=n(),
-            medianage=median(age),
-            agep25=quantile(age, 1/4),
-            agep75=quantile(age, 3/4),
+  summarize(total.age=sum(!is.na(age)),
+            median.age=median(age),
+            p25.age=quantile(age, 1/4),
+            p75.age=quantile(age, 3/4),
+            total.monthssincehaart=sum(!is.na(monthssincehaart)),
+            median.monthssincehaart=median(monthssincehaart, na.rm=TRUE),
+            p25.monthssincehaart=quantile(monthssincehaart, 1/4, na.rm=TRUE),
+            p75.monthssincehaart=quantile(monthssincehaart, 3/4, na.rm=TRUE),
+            total.female=sum(female==0 | female==1),
             count.female=sum(female==1),
             prop.female=mean(female), 
-            mediantimehiv=median(timesincehiv),
-            timehivp25=quantile(timesincehiv, 1/4),
-            timehivp75=quantile(timesincehiv, 3/4),           
-            countcd4=sum(!is.na(new_cd4_count)),
-            mediancd4=median(new_cd4_count, na.rm=TRUE),
-            cd4p25=quantile(new_cd4_count, 1/4, na.rm=TRUE),
-            cd4p75=quantile(new_cd4_count, 3/4, na.rm=TRUE),
+            total.mossincehiv=sum(!is.na(monthssincehiv)),
+            median.mossincehiv=median(monthssincehiv),
+            p25.mossincehiv=quantile(monthssincehiv, 1/4),
+            p75.mossincehiv=quantile(monthssincehiv, 3/4),           
+            total.cd4=sum(!is.na(new_cd4_count)),
+            median.cd4=median(new_cd4_count, na.rm=TRUE),
+            p25.cd4=quantile(new_cd4_count, 1/4, na.rm=TRUE),
+            p75.cd4=quantile(new_cd4_count, 3/4, na.rm=TRUE),
+            total.cd4lt50=sum(cd4_lt50==0 | cd4_lt50==1),
             count.cd4lt50=sum(cd4_lt50==1, na.rm=TRUE),
             prop.cd4lt50=mean(cd4_lt50, na.rm=TRUE),
+            total.cd4lt100=sum(cd4_lt100==0 | cd4_lt100==1),
             count.cd4lt100=sum(cd4_lt100==1, na.rm=TRUE),
             prop.cd4lt100=mean(cd4_lt100, na.rm=TRUE),
+            total.haart=sum(haart==0 | haart==1),
             count.haart=sum(haart==1),
             prop.haart=mean(haart),
+            total.haart1mon=sum(haart.1mon==0 | haart.1mon==1),
+            count.haart1mon=sum(haart.1mon==1),
+            prop.haart1mon=mean(haart.1mon),
+            total.haart3mon=sum(haart.3mon==0 | haart.3mon==1),
+            count.haart3mon=sum(haart.3mon==1),
+            prop.haart3mon=mean(haart.3mon),
+            total.haart6mon=sum(haart.6mon==0 | haart.6mon==1),
+            count.haart6mon=sum(haart.6mon==1),
+            prop.haart6mon=mean(haart.6mon),
+            total.hiv1mon=sum(hiv.1mon==0 | hiv.1mon==1),
+            count.hiv1mon=sum(hiv.1mon==1),
+            prop.hiv1mon=mean(hiv.1mon),
+            total.hiv3mon=sum(hiv.3mon==0 | hiv.3mon==1),
+            count.hiv3mon=sum(hiv.3mon==1),
+            prop.hiv3mon=mean(hiv.3mon),
+            total.hiv6mon=sum(hiv.6mon==0 | hiv.6mon==1),
+            count.hiv6mon=sum(hiv.6mon==1),
+            prop.hiv6mon=mean(hiv.6mon),
+            total.unilateral=sum(visit_laterality==1 | visit_laterality==2),
             count.unilateral=sum(visit_laterality==1),
+            prop.unilateral=mean(visit_laterality==1),
+            total.bilateral=sum(visit_laterality==1 | visit_laterality==2),
             count.bilateral=sum(visit_laterality==2),
+            prop.bilateral=mean(visit_laterality==2),
+            total.univi=sum(uni_vi==0 | uni_vi==1),
             count.univi=sum(uni_vi==1),
             prop.univi=mean(uni_vi==1),
+            total.bivi=sum(bi_vi==0 | bi_vi==1),
             count.bivi=sum(bi_vi==1),
             prop.bivi=mean(bi_vi==1),
+            total.uniblind=sum(uni_blind==0 | uni_blind==1),
             count.uniblind=sum(uni_blind==1),
             prop.uniblind=mean(uni_blind==1),
+            total.biblind=sum(bi_blind==0 | bi_blind==1),
             count.biblind=sum(bi_blind==1),
             prop.biblind=mean(bi_blind==1),
+            total.rd=sum(new_rd==0 | new_rd==1),
             count.rd=sum(new_rd==1),
-            count.nord=sum(new_rd==0))
+            prop.rd=mean(new_rd==1),
+            total.nord=sum(new_rd==0 | new_rd==1),
+            count.nord=sum(new_rd==0),
+            prop.nord=mean(new_rd==0)) %>%
+  gather(field, value, total.age:prop.nord) %>%
+  separate(field, into=c("stat", "variable"), sep="\\.") %>%
+  mutate(ltfu.stat=paste(ltfu3, stat, sep="_")) %>%
+  select(-stat, -ltfu3) %>%
+  spread(ltfu.stat, value)
 
 
 # P-values
@@ -498,15 +557,23 @@ firstcmv.data.notltfu.pt <- firstcmv.data.patient %>% filter(ltfu3==0)
 firstcmv.data.ltfu.pt <- firstcmv.data.patient %>% filter(ltfu3==1)  
 wilcox.test(firstcmv.data.notltfu.pt$age, firstcmv.data.ltfu.pt$age)
 wilcox.test(firstcmv.data.notltfu.pt$female, firstcmv.data.ltfu.pt$female)
-wilcox.test(firstcmv.data.notltfu.pt$timesincehiv, firstcmv.data.ltfu.pt$timesincehiv)
+wilcox.test(firstcmv.data.notltfu.pt$monthssincehiv, firstcmv.data.ltfu.pt$monthssincehiv)
 wilcox.test(firstcmv.data.notltfu.pt$new_cd4_count, firstcmv.data.ltfu.pt$new_cd4_count)
 wilcox.test(firstcmv.data.notltfu.pt$cd4_lt50, firstcmv.data.ltfu.pt$cd4_lt50)
+wilcox.test(firstcmv.data.notltfu.pt$cd4_lt100, firstcmv.data.ltfu.pt$cd4_lt100)
 wilcox.test(firstcmv.data.notltfu.pt$haart, firstcmv.data.ltfu.pt$haart)
+wilcox.test(firstcmv.data.notltfu.pt$monthssincehaart, firstcmv.data.ltfu.pt$monthssincehaart)
 wilcox.test(firstcmv.data.notltfu.pt$visit_laterality, firstcmv.data.ltfu.pt$visit_laterality)
 wilcox.test(firstcmv.data.notltfu.pt$uni_vi, firstcmv.data.ltfu.pt$uni_vi)
 wilcox.test(firstcmv.data.notltfu.pt$bi_vi, firstcmv.data.ltfu.pt$bi_vi)
 wilcox.test(firstcmv.data.notltfu.pt$uni_blind, firstcmv.data.ltfu.pt$uni_blind)
 wilcox.test(firstcmv.data.notltfu.pt$bi_blind, firstcmv.data.ltfu.pt$bi_blind)
+wilcox.test(firstcmv.data.notltfu.pt$haart.1mon, firstcmv.data.ltfu.pt$haart.1mon)
+wilcox.test(firstcmv.data.notltfu.pt$haart.3mon, firstcmv.data.ltfu.pt$haart.3mon)
+wilcox.test(firstcmv.data.notltfu.pt$haart.6mon, firstcmv.data.ltfu.pt$haart.6mon)
+wilcox.test(firstcmv.data.notltfu.pt$hiv.1mon, firstcmv.data.ltfu.pt$hiv.1mon)
+wilcox.test(firstcmv.data.notltfu.pt$hiv.3mon, firstcmv.data.ltfu.pt$hiv.3mon)
+wilcox.test(firstcmv.data.notltfu.pt$hiv.6mon, firstcmv.data.ltfu.pt$hiv.6mon)
 
 # Table 3: Baseline eye characteristics
 table3 <- firstcmv.data.all %>%
@@ -556,7 +623,7 @@ fisher.test(xtabs(data=firstcmv.data.all, ~ mostantzone+ltfu3))
 fisher.test(xtabs(data=firstcmv.data.all, ~ new_vithaze+ltfu3))
 fisher.test(xtabs(data=firstcmv.data.all, ~ new_rd+ltfu3))
 fisher.test(xtabs(data=firstcmv.data.all, ~ percentretina+ltfu3))
-
+fisher.test(xtabs(data=firstcmv.data.all, ~ monthssincehaart+ltfu3))
 
 
 ################################
@@ -576,7 +643,22 @@ firstcmv.data.all_censor3m <- firstcmv.data.all %>%
 
 # Second eye text
 xtabs(data=firstcmv.data.patient, ~visit_laterality+second_eye, addNA=TRUE)
-
+text_secondeye_chars <- firstcmv.data.patient %>%
+  filter(second_eye==1) %>%
+  summarize(count=n(),
+            postzone1=sum(mostpostzone==1),
+            antzone3=sum(mostantzone==3),
+            percentretina.lt10=sum(percentretina==1, na.rm=TRUE),
+            percentretina.1025=sum(percentretina==2, na.rm=TRUE),
+            percentretina.2650=sum(percentretina==3, na.rm=TRUE),
+            percentretina.gt50=sum(percentretina==4, na.rm=TRUE),
+            percentretina.cd=sum(percentretina==5, na.rm=TRUE),
+            vithaze=sum(new_vithaze==1, na.rm=TRUE),
+            novithaze=sum(new_vithaze==0, na.rm=TRUE),
+            rd=sum(new_rd==1),
+            nord=sum(new_rd==0),
+            va.2060=sum(logmar>0.47712125471966),
+            va.20400=sum(logmar>1.301029995664))
 # Unilateral cases at baseline
 firstcmv.data.patient.uni <- firstcmv.data.patient %>%
   filter(visit_laterality==1)
@@ -610,6 +692,21 @@ cbind(exp(cox_secondeye_censor3m.cd4_lt50.firth$coefficients), cox_secondeye_cen
 # HAART
 cox_secondeye_censor3m.haart.firth <- coxphf(firstcmv.data.patient.uni.noltfu, formula=secondeye_surv_object_censor3m.noltfu ~ haart)
 cbind(exp(cox_secondeye_censor3m.haart.firth$coefficients), cox_secondeye_censor3m.haart.firth$ci.lower, cox_secondeye_censor3m.haart.firth$ci.upper, cox_secondeye_censor3m.haart.firth$prob)
+# Duration of HAART
+cox_secondeye_censor3m.mshaart.firth <- coxphf(firstcmv.data.patient.uni.noltfu, formula=secondeye_surv_object_censor3m.noltfu ~ monthssincehaart)
+cbind(exp(cox_secondeye_censor3m.mshaart.firth$coefficients), cox_secondeye_censor3m.mshaart.firth$ci.lower, cox_secondeye_censor3m.mshaart.firth$ci.upper, cox_secondeye_censor3m.mshaart.firth$prob)
+# HAART >1 month
+cox_secondeye_censor3m.mshaart1.firth <- coxphf(firstcmv.data.patient.uni.noltfu, formula=secondeye_surv_object_censor3m.noltfu ~ haart.1mon)
+cbind(exp(cox_secondeye_censor3m.mshaart1.firth$coefficients), cox_secondeye_censor3m.mshaart1.firth$ci.lower, cox_secondeye_censor3m.mshaart1.firth$ci.upper, cox_secondeye_censor3m.mshaart1.firth$prob)
+# HAART >3 month
+cox_secondeye_censor3m.mshaart3.firth <- coxphf(firstcmv.data.patient.uni.noltfu, formula=secondeye_surv_object_censor3m.noltfu ~ haart.3mon)
+cbind(exp(cox_secondeye_censor3m.mshaart3.firth$coefficients), cox_secondeye_censor3m.mshaart3.firth$ci.lower, cox_secondeye_censor3m.mshaart3.firth$ci.upper, cox_secondeye_censor3m.mshaart3.firth$prob)
+# HAART ≤3 month
+cox_secondeye_censor3m.mshaart3.firth <- coxphf(firstcmv.data.patient.uni.noltfu, formula=secondeye_surv_object_censor3m.noltfu ~ haart.3monorless)
+cbind(exp(cox_secondeye_censor3m.mshaart3.firth$coefficients), cox_secondeye_censor3m.mshaart3.firth$ci.lower, cox_secondeye_censor3m.mshaart3.firth$ci.upper, cox_secondeye_censor3m.mshaart3.firth$prob)
+# HAART >6 month
+cox_secondeye_censor3m.mshaart6.firth <- coxphf(firstcmv.data.patient.uni.noltfu, formula=secondeye_surv_object_censor3m.noltfu ~ haart.6mon)
+cbind(exp(cox_secondeye_censor3m.mshaart6.firth$coefficients), cox_secondeye_censor3m.mshaart6.firth$ci.lower, cox_secondeye_censor3m.mshaart6.firth$ci.upper, cox_secondeye_censor3m.mshaart6.firth$prob)
 # Active retinitis
 cox_secondeye_censor3m.induction.firth <- coxphf(firstcmv.data.patient.uni.noltfu, formula=secondeye_surv_object_censor3m.noltfu ~ induction)
 cbind(exp(cox_secondeye_censor3m.induction.firth$coefficients), cox_secondeye_censor3m.induction.firth$ci.lower, cox_secondeye_censor3m.induction.firth$ci.upper, cox_secondeye_censor3m.induction.firth$prob)
@@ -630,7 +727,7 @@ cox_secondeye_censor3m.va20400.firth <- coxphf(firstcmv.data.patient.uni.noltfu,
 cbind(exp(cox_secondeye_censor3m.va20400.firth$coefficients), cox_secondeye_censor3m.va20400.firth$ci.lower, cox_secondeye_censor3m.va20400.firth$ci.upper, cox_secondeye_censor3m.va20400.firth$prob)
 
 # FULL MODEL
-cox_secondeye_censor3m.firth <- coxphf(firstcmv.data.patient.uni.noltfu, formula=secondeye_surv_object_censor3m.noltfu ~ age + female + cd4_lt50 + haart + induction + mostpostzone1 + mostantzone2 + percentretina2)
+cox_secondeye_censor3m.firth <- coxphf(firstcmv.data.patient.uni.noltfu, formula=secondeye_surv_object_censor3m.noltfu ~ age + female + cd4_lt50 + haart.3monorless + induction + mostpostzone1 + mostantzone2 + percentretina2, maxit=1000)
 summary(cox_secondeye_censor3m.firth)
 cbind(exp(cox_secondeye_censor3m.firth$coefficients), 
           cox_secondeye_censor3m.firth$ci.lower,
@@ -642,6 +739,13 @@ table4 <- firstcmv.data.patient.uni %>%
   summarize(count=n(),
             meanage=mean(age),
             sdage=sd(age),
+            meanmshaart=mean(monthssincehaart),
+            sdmshaart=sd(monthssincehaart),
+            medianmshaart=median(monthssincehaart),
+            haartgt1month=sum(haart.1mon==1),
+            haartgt3month=sum(haart.3mon==1),
+            haartgt6month=sum(haart.6mon==1),
+            haart3monorless=sum(haart.3monorless==1),
             female.ct=sum(female==1),
             cd4_lt50.ct=sum(cd4_lt50==1),
             haart.ct=sum(haart==1),
@@ -655,6 +759,10 @@ table4 <- firstcmv.data.patient.uni %>%
 
 
 # Sensitivity without firth
+# Age
+cox_secondeye_censor3m.age.nofirth <- coxphf(firstcmv.data.patient.uni.noltfu, formula=secondeye_surv_object_censor3m.noltfu ~ age, firth=TRUE)
+cbind(exp(cox_secondeye_censor3m.age.nofirth$coefficients), cox_secondeye_censor3m.age.nofirth$ci.lower, cox_secondeye_censor3m.age.nofirth$ci.upper, cox_secondeye_censor3m.age.nofirth$prob)
+
 cox_secondeye_censor3m.age.noltfu <- coxph(secondeye_surv_object_censor3m.noltfu ~ age, data=firstcmv.data.patient.uni.noltfu)
 summary(cox_secondeye_censor3m.age.noltfu)
 cox_secondeye_censor3m.ind.noltfu <- coxph(secondeye_surv_object_censor3m.noltfu ~ induction, data=firstcmv.data.patient.uni.noltfu)
@@ -672,16 +780,16 @@ firstcmv.data.patient.uni.noltfu %>% filter(second_eye==1) %>%
             p75time=quantile(time_to_secondeye, 0.75))
 
 # FULL MODEL
-cox_secondeye_censor12m.firth <- coxphf(firstcmv.data.patient.uni.noltfu, formula=secondeye_surv_object.noltfu ~ age + female + cd4_lt50 + haart + induction + mostpostzone1 + mostantzone2 + percentretina2)
+cox_secondeye_censor12m.firth <- coxphf(firstcmv.data.patient.uni.noltfu, formula=secondeye_surv_object.noltfu ~ age + female + cd4_lt50 + haart.3monorless + induction + mostpostzone1 + mostantzone2 + percentretina2, maxit=1000)
 summary(cox_secondeye_censor12m.firth)
 cbind(exp(cox_secondeye_censor12m.firth$coefficients), 
       cox_secondeye_censor12m.firth$ci.lower,
       cox_secondeye_censor12m.firth$ci.upper,
       cox_secondeye_censor12m.firth$prob)
 
-# Full model, censored at 12 months
-cox_secondeye.firth <- coxphf(firstcmv.data.patient.uni.noltfu, formula=secondeye_surv_object.noltfu ~ age + female + cd4_lt50 + haart + induction + as.factor(mostpostzone))
-summary(cox_secondeye.firth)
+# # Full model, censored at 12 months
+# cox_secondeye.firth <- coxphf(firstcmv.data.patient.uni.noltfu, formula=secondeye_surv_object.noltfu ~ age + female + cd4_lt50 + haart + induction + as.factor(mostpostzone))
+# summary(cox_secondeye.firth)
 
 table.s1.se <- firstcmv.data.patient.uni %>%
   group_by(second_eye) %>%
@@ -689,6 +797,9 @@ table.s1.se <- firstcmv.data.patient.uni %>%
             meanage=mean(age),
             sdage=sd(age),
             female.ct=sum(female==1),
+            haart3mon.ct=sum(haart.3mon==1),
+            female.ct=sum(female==1),
+            haart3monorless.ct=sum(haart.3monorless==1),
             cd4_lt50.ct=sum(cd4_lt50==1),
             haart.ct=sum(haart==1),
             active.ct=sum(induction==1),
@@ -749,6 +860,10 @@ cbind(exp(cox_rd_censor3m.cd4_lt50.tidy$estimate), exp(cox_rd_censor3m.cd4_lt50.
 cox_rd_censor3m.haart <- coxph(rd_surv_object_censor3m ~ haart + cluster(studyid), data=firstcmv.data.all.nord)
 cox_rd_censor3m.haart.tidy <- tidy(cox_rd_censor3m.haart)
 cbind(exp(cox_rd_censor3m.haart.tidy$estimate), exp(cox_rd_censor3m.haart.tidy$conf.low), exp(cox_rd_censor3m.haart.tidy$conf.high), cox_rd_censor3m.haart.tidy$p.value)
+# HAART > 3mos
+cox_rd_censor3m.haart.3m <- coxph(rd_surv_object_censor3m ~ haart.3monorless + cluster(studyid), data=firstcmv.data.all.nord)
+cox_rd_censor3m.haart.3m.tidy <- tidy(cox_rd_censor3m.haart.3m)
+cbind(exp(cox_rd_censor3m.haart.3m.tidy$estimate), exp(cox_rd_censor3m.haart.3m.tidy$conf.low), exp(cox_rd_censor3m.haart.3m.tidy$conf.high), cox_rd_censor3m.haart.3m.tidy$p.value)
 # MOST POST ZONE
 cox_rd_censor3m.mostpost <- coxph(rd_surv_object_censor3m ~ mostpostzone1 + cluster(studyid), data=firstcmv.data.all.nord)
 cox_rd_censor3m.mostpost.tidy <- tidy(cox_rd_censor3m.mostpost)
@@ -766,7 +881,7 @@ cbind(exp(cox_rd_censor3m.size.tidy$estimate), exp(cox_rd_censor3m.size.tidy$con
 cox_rd_censor3m.induction.firth <- coxphf(firstcmv.data.all.nord, formula=rd_surv_object_censor3m ~ induction)
 cbind(exp(cox_rd_censor3m.induction.firth$coefficients), cox_rd_censor3m.induction.firth$ci.lower, cox_rd_censor3m.induction.firth$ci.upper, cox_rd_censor3m.induction.firth$prob)
 # FULL MODEL
-cox_rd_censor3m.mostpostzone.firth <- coxphf(firstcmv.data.all.nord, formula=rd_surv_object_censor3m ~ age + female + cd4_lt50 + haart + induction + mostpostzone1 + mostantzone2 + percentretina2)
+cox_rd_censor3m.mostpostzone.firth <- coxphf(firstcmv.data.all.nord, formula=rd_surv_object_censor3m ~ age + female + cd4_lt50 + haart.3monorless + induction + mostpostzone1 + mostantzone2 + percentretina2, maxit=1000)
 cbind(exp(cox_rd_censor3m.mostpostzone.firth$coefficients), cox_rd_censor3m.mostpostzone.firth$ci.lower, cox_rd_censor3m.mostpostzone.firth$ci.upper, cox_rd_censor3m.mostpostzone.firth$prob)
 
 
@@ -779,6 +894,8 @@ table5 <- firstcmv.data.all %>%
             female.ct=sum(female==1),
             cd4_lt50.ct=sum(cd4_lt50==1),
             haart.ct=sum(haart==1),
+            haart3m.ct=sum(haart.3mon==1),
+            haart3morless.ct=sum(haart.3monorless==1),
             active.ct=sum(induction==1),
             mostpostz1=sum(mostpostzone1==1),
             mostpostz23=sum(mostpostzone1==0),
@@ -793,7 +910,7 @@ rd_surv_object_censor12m <- with(firstcmv.data.all.nord, Surv(time=starttime, ti
 rd_surv_object_censor12m
 summary(rd_surv_object_censor12m)
 survRate(rd_surv_object_censor12m ~ 1, data=firstcmv.data.all.nord)
-cox_rd_censor12m.mostpostzone.firth <- coxphf(firstcmv.data.all.nord, formula=rd_surv_object_censor12m ~ age + female + cd4_lt50 + haart + induction + mostpostzone1 + mostantzone2 + percentretina2)
+cox_rd_censor12m.mostpostzone.firth <- coxphf(firstcmv.data.all.nord, formula=rd_surv_object_censor12m ~ age + female + cd4_lt50 + haart.3monorless + induction + mostpostzone1 + mostantzone2 + percentretina2)
 cbind(exp(cox_rd_censor12m.mostpostzone.firth$coefficients), cox_rd_censor12m.mostpostzone.firth$ci.lower, cox_rd_censor12m.mostpostzone.firth$ci.upper, cox_rd_censor12m.mostpostzone.firth$prob)
 
 # time to RD:
@@ -810,6 +927,8 @@ table.s1.rd <- firstcmv.data.all %>%
             female.ct=sum(female==1),
             cd4_lt50.ct=sum(cd4_lt50==1),
             haart.ct=sum(haart==1),
+            haart3m.ct=sum(haart.3mon==1),
+            haart3morless.ct=sum(haart.3monorless==1),
             active.ct=sum(induction==1),
             mostpostz1=sum(mostpostzone1==1),
             mostpostz23=sum(mostpostzone1==0),
@@ -863,11 +982,35 @@ addmargins(xtabs(data=filter(cmvrdatalong, studyid=="C136"), ~redcap_week+eye, a
 
 addmargins(xtabs(data=filter(cmvrdatalong, eye=="od_" & redcap_week==0), ~studyid+ visit_laterality))
 qol0data <- cmvrdatalong %>%
-  filter(eye=="od_" & redcap_week==0) %>%
-  mutate(anycmvr=if_else(visit_laterality>0, 1, 0))
+  group_by(studyid) %>%
+  mutate(baselinecmvr_work=if_else(visit_laterality>0 & redcap_week==0, 1, 0),
+         baselinecmvr.either=max(baselinecmvr_work, na.rm=TRUE),
+         baselineeq5_work=if_else(redcap_week==0, eq5score, NA_real_),
+         baselineeq5=max(baselineeq5_work, na.rm=TRUE),
+         evercmvr=if_else(visit_laterality>0,1,0)) %>%
+  group_by(studyid, redcap_week) %>%
+  mutate(cmvr.either=if_else(visit_laterality>0, 1, 0),
+         wt2060.bettereye=if_else(min(logmar)>0.47712125471966,1,0),
+         wt20400.bettereye=if_else(min(logmar)>1.301029995664,1,0),
+         distancesum = (hk1 + hk2 + hk3 +hk4 +hk5 +hk6),
+         distancestand = (hk1 + hk2 + hk3 +hk4 +hk5 +hk6) * (100/(4*6)),
+         nearsum = (hk7 + hk8 + hk9 +hk10 +hk11 +hk12 +hk13),
+         nearstand = (hk7 + hk8 + hk9 +hk10 +hk11 +hk12 +hk13) * (100/(4*7)),
+         socialsum = (hk14 +hk15 + hk16 +hk17),
+         socialstand = (hk14 +hk15 + hk16 +hk17) * (100/(4*4)),
+         catsum = (hk18 + hk19 + hk20 +hk21),
+         catstand = (hk18 + hk19 + hk20 +hk21) * (100/(4*4)),
+         qolsum = (hk22 + hk23 + hk24),
+         qolstand = (hk22 + hk23 + hk24) * (100/(4*3)),
+         totalhksum = (hk1 + hk2 + hk3 +hk4 +hk5 +hk6 + hk7 + hk8 + hk9 +hk10 +hk11 +hk12 +hk13 + hk14 +hk15 + hk16 +hk17 + hk18 + hk19 + hk20 +hk21 + hk22 + hk23 + hk24),
+         totalhkstand = (hk1 + hk2 + hk3 +hk4 +hk5 +hk6 + hk7 + hk8 + hk9 +hk10 +hk11 +hk12 +hk13 + hk14 +hk15 + hk16 +hk17 + hk18 + hk19 + hk20 +hk21 + hk22 + hk23 + hk24) * (100/(4*24))) %>%
+  filter(eye=="od_" & redcap_week %in% c(0,4,24,52)) # Make sure we're not excluding anyone with only a left eye: xtabs(data=cmvrdatalong, ~redcap_week+eye, addNA=TRUE)
+  
 
+# PLEASE ADD BILATERAL CMVR/UNILATERAL CMVR
 qol_table1 <- qol0data %>%
-  group_by(anycmvr) %>%
+  filter(redcap_week==0) %>%
+  group_by(cmvr.either) %>%
   summarize(mean_eq5=mean(eq5score),
             sd_eq5=sd(eq5score),
             count_eq5=sum(!is.na(eq5score)),
@@ -876,24 +1019,56 @@ qol_table1 <- qol0data %>%
             count_age=sum(!is.na(age)),
             num_female=sum(female==1),
             count_female=sum(!is.na(female)),
-            prop_female=num_female/count_female) %>%
-  # PLEASE ADD TO THIS BASELINE TABLE; VISION? CD4? TIME SINCE HIV?
-  gather(field, value, mean_eq5:prop_female) %>%
+            prop_female=num_female/count_female,
+            median_vaph=median(va_ph, na.rm=TRUE),
+            num_wt2060bettereye=sum(wt2060.bettereye==1, na.rm=TRUE),
+            count_wt2060bettereye=sum(!is.na(wt2060.bettereye)),
+            num_wt20400bettereye=sum(wt20400.bettereye==1, na.rm=TRUE),
+            count_wt20400bettereye=sum(!is.na(wt20400.bettereye)),
+            num_univi=sum(uni_vi==1, na.rm=TRUE),
+            count_univi=sum(!is.na(uni_vi)),
+            prop_univi=mean(uni_vi==1, na.rm=TRUE),
+            num_bivi=sum(bi_vi==1, na.rm=TRUE),
+            count_bivi=sum(!is.na(bi_vi)),
+            prop_bivi=mean(bi_vi==1, na.rm=TRUE),
+            num_uniblind=sum(uni_blind==1, na.rm=TRUE),
+            count_uniblind=sum(!is.na(uni_blind)),
+            prop_uniblind=mean(uni_blind==1, na.rm=TRUE),
+            num_biblind=sum(bi_blind==1, na.rm=TRUE),
+            count_biblind=sum(!is.na(bi_blind)),
+            prop_biblind=mean(bi_blind==1, na.rm=TRUE),
+            median_moshiv=median(monthssincehiv, na.rm=TRUE),
+            p25_moshiv=quantile(monthssincehiv, 1/4),
+            p75_moshiv=quantile(monthssincehiv, 3/4),           
+            count_cd4=sum(!is.na(new_cd4_count)),
+            median_cd4=median(new_cd4_count, na.rm=TRUE),
+            p25_cd4=quantile(new_cd4_count, 1/4, na.rm=TRUE),
+            p75_cd4=quantile(new_cd4_count, 3/4, na.rm=TRUE),
+            count_haart=sum(haart==1, na.rm=TRUE),
+            num_rd=sum(new_rd==1, na.rm=TRUE),
+            count_rd=sum(!is.na(new_rd)),
+            num_nord=sum(new_rd==0, na.rm=TRUE),
+            count_nord=sum(!is.na(new_rd))) %>%
+  gather(field, value, mean_eq5:count_nord) %>%
   separate(field, into=c("stat", "var"), sep="_") %>%
-  mutate(groupstat=paste(anycmvr, stat, sep="_")) %>%
-  select(-stat, -anycmvr) %>%
-  spread(groupstat, value, convert=TRUE)
+  mutate(groupstat=paste(cmvr.either, stat, sep="_")) %>%
+  select(-stat, -cmvr.either) %>%
+  spread(groupstat, value, convert=TRUE) %>%
+  select(var, `0_count`, `0_mean`, `0_sd`, `0_median`, `0_p25`, `0_p75`, `0_num`, `0_prop`, `1_count`, `1_mean`, `1_sd`, `1_median`, `1_p25`, `1_p75`, `1_num`, `1_prop`)
+
 
 # GETTING CONFIDENCE INTERVALS, ANYCMVR
 model1_nocmv <- lm(eq5score ~ anycmvr, data=qol0data)
 # Note that you can get the mean and 95%CI for the anycmvr==0 group from the summary and confint, looking at intercept
 summary(model1_nocmv)
 confint(model1_nocmv)
+library(broom)
+tidy.model1_nocmv <- tidy(model1_nocmv, conf.int = TRUE)
 # Easy way to get mean/CI of the anycmvr==1 group is to make the reference level be "1", then just read off the intercept:
 model1_cmv <- lm(eq5score ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
 summary(model1_cmv)
 confint(model1_cmv)
-
+tidy.model1_cmv <- tidy(model1_cmv, conf.int = TRUE)
 # WHAT ABOUT LATERALITY?
 # Note we need to specify it's a factor because otherwise treats as a continuous variable
 model1_lat <- lm(eq5score ~ factor(visit_laterality), data=qol0data)
@@ -910,18 +1085,72 @@ model1_lat_bi <- lm(eq5score ~ factor(visit_laterality, levels=c("2", "0", "1"))
 summary(model1_lat_bi)
 # So the bilateral ones didn't have worse QOL...
 
+#? Does HAART effect QOL? 
+model1_haart1 <- lm(eq5score ~ factor(haart, levels=c("1", "0")), data=qol0data)
+summary(model1_haart)
+model1_haart0 <- lm(eq5score ~ factor(haart, levels=c("0", "1")), data=qol0data)
+summary(model1_haart0)
+# JM - adding in the model without haart to get p-value from anova (aka likelihood ratio test LRT)
+model1_nohaart <- lm(eq5score ~ 1, data=qol0data %>% filter(haart %in% c("1","0")))
+anova(model1_haart1,model1_nohaart)               # JM - ^you have to filter this model so that it uses the same dataset
+#       as the one with the predictor variable
+# JM - looks like haart is only marginally significant (0.05<p<0.1)
+model1_cd4 <- lm(eq5score ~ new_cd4_count, data=qol0data)
+summary(model1_cd4)
+tidy(model1_cd4, conf.int = TRUE)
+
+# HONG KONG
+# Anycmvr for total and 5 catagories for hk
+#total
+modelhktot_nocmv <- lm(totalhkstand ~ anycmvr, data=qol0data)
+summary(modelhktot_nocmv)
+confint(modelhktot_nocmv)
+modelhktot_cmv <- lm(totalhkstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
+summary(modelhktot_cmv)
+confint(modelhktot_cmv)
+#distance
+modelhkdist_nocmv <- lm(distancestand ~ anycmvr, data=qol0data)
+summary(modelhkdist_nocmv)
+confint(modelhkdist_nocmv)
+modelhkdist_cmv <- lm(distancestand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
+summary(modelhkdist_cmv)
+confint(modelhkdist_cmv)
+#near
+modelhknear_nocmv <- lm(nearstand ~ anycmvr, data=qol0data)
+summary(modelhknear_nocmv)
+confint(modelhknear_nocmv)
+modelhknear_cmv <- lm(nearstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
+summary(modelhknear_cmv)
+confint(modelhknear_cmv)
+#social
+modelhksoc_nocmv <- lm(socialstand ~ anycmvr, data=qol0data)
+summary(modelhksoc_nocmv)
+confint(modelhksoc_nocmv)
+modelhksoc_cmv <- lm(socialstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
+summary(modelhksoc_cmv)
+confint(modelhksoc_cmv)
+#cataract
+modelhkcat_nocmv <- lm(catstand ~ anycmvr, data=qol0data)
+summary(modelhkcat_nocmv)
+confint(modelhkcat_nocmv)
+modelhkcat_cmv <- lm(catstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
+summary(modelhkcat_cmv)
+confint(modelhkcat_cmv)
+#hkqol subsection
+modelhkqolsub_nocmv <- lm(qolstand ~ anycmvr, data=qol0data)
+summary(modelhkqolsub_nocmv)
+confint(modelhkqolsub_nocmv)
+modelhkqolsub_cmv <- lm(qolstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
+summary(modelhkqolsub_cmv)
+confint(modelhkqolsub_cmv)
+
 # LONGITUDINAL?
 addmargins(xtabs(data=cmvrdatalong, ~eq5score+redcap_week))
 # So month 6 seems best...
 
 # THIS NOT CORRECT YET; NEED TO EXCLUDE PEOPLE WHO SUBSEQUENTLY DEVELOPED CMVR; OR MAYBE HAVE THEM SWITCH GROUPS OR SOMETHING
-qol_longitudinaldata <- cmvrdatalong %>%
-  filter(eye=="od_") %>%
-  group_by(studyid) %>%
-  mutate(baselinecmvr_work=if_else(visit_laterality>0 & redcap_week==0, 1, 0),
-         baselinecmvr=max(baselinecmvr_work, na.rm=TRUE),
-         baselineeq5_work=if_else(redcap_week==0, eq5score, NA_real_),
-         baselineeq5=max(baselineeq5_work, na.rm=TRUE))
+
+
 
 qol_longitudinaltable <- qol_longitudinaldata %>%
   filter(redcap_week %in% c(0,24)) %>%
