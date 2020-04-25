@@ -1,9 +1,15 @@
 library(readr)
+library(readxl)
 library(tidyverse)
-## library(rlang)
+# library(rlang)
 library(skimr)
+# library(irr)
+# install.packages(lpSolve)
+# library(lpSolve)
+library(lubridate)
 
-costscreened_redcapexport <- read_csv("CostSCREENED_DATA_2019-10-02_1203.csv")
+
+costscreened_redcapexport <- read_csv("CostSCREENED_DATA_2020-04-23_1508.csv")
 glimpse(costscreened_redcapexport)
 # Check out different types of records
 xtabs(data=costscreened_redcapexport , ~redcap_event_name+clinic_attended_v2, addNA=TRUE) # I guess we only want screening visit
@@ -40,20 +46,59 @@ screeningdata <- costscreened %>%
   select_if(~sum(!is.na(.)) > 0) %>%
   select(-redcap_event_name)
 
-# randomization_model <- read_csv("randomization_model_results.csv")
+randomization_model <- read_csv("randomization_model_results.csv")
 # JK: I am not understanding why there is missing data. I wouldn't think there would be missing data. 
 # Where did this randomization_model_results.csv file come from? Is it from Redcap? 
 # You would have had to have merged it correct? I wonder if safer to just do it in the R code?
 # This is the original file, I believe. But we should export from Redcap
-Random_10_percent_list_for_negatives_copy <- read_excel("Random 10 percent list for negatives copy.xlsx") %>%
-  rename(refer_negative=number,
-         referresultnegatives=refer) %>%
-  select(refer_negative, referresultnegatives)
-screeningdata2 <- left_join(screeningdata, Random_10_percent_list_for_negatives_copy, by=("refer_negative"))
-xtabs(data=screeningdata2, ~refer_positive+referresultnegatives, addNA=TRUE)
-# JK: What is refer_positive? Check Redcap
-addmargins(xtabs(data=screeningdata2, ~refer_negative+referresultnegatives, addNA=TRUE))
-# JK: looks like this is right but should confirm...
+# Random_10_percent_list_for_negatives_copy <- read_excel("Random 10 percent list for negatives copy.xlsx") %>%
+#   rename(refer_negative=number,
+#          referresultnegatives=refer) %>%
+#   select(refer_negative, referresultnegatives)
+# screeningdata2test <- left_join(screeningdata, Random_10_percent_list_for_negatives_copy, by=("refer_negative"))
+# xtabs(data=screeningdata2test, ~refer_positive+referresultnegatives, addNA=TRUE)
+
+# BLAKE's ALTERNATIVE...
+randomization_model <- read_csv("randomization_model_results.csv")
+screeningdata2 <- full_join(randomization_model, screeningdata, by="study_id")
+glimpse(screeningdata2)
+
+# Comparing to the original randomization file
+# sd3 <- screeningdata2 %>%
+#   select(study_id, randomization_model) %>%
+#   arrange(study_id)
+# sd3test <- screeningdata2test %>% 
+#   select(study_id, referresultnegatives) %>%
+#   arrange(study_id)
+# randomcompare <- full_join(sd3, sd3test, by="study_id") %>%
+#   mutate(identical=if_else(randomization_model==referresultnegatives,T,F))
+# View(randomcompare)
+# JK: how was this resolved? there are 3 differences: 1664396, 2718059, 3311923
+# Fine with me to just use randomization_model but I forget where that came from? From Redcap?
+# Import randomization model 
+
+
+## BMS: iop (iop_left_eye_os, iop_right_eye_od) and travel_cost is wrongly labeled as a character 
+## and not numeric here, need to correct 
+
+# JK: I like skim in this situation to easily see if there are any numeric variables currently listed as character
+# This reveals travel_cost, iop_right_eye_od, iop_left_eye_os
+# I would then just tabulate to see what the issue is
+skim(screeningdata2)
+# xtabs(data=screeningdata2, ~travel_cost, addNA=TRUE) # The 00 --> JK will fix in Redcap: xtabs(data=filter(screeningdata2, travel_cost=="00"), ~study_id)
+# xtabs(data=screeningdata2, ~iop_right_eye_od, addNA=TRUE) # Just leading zeros --> JK will fix in Redcap: xtabs(data=filter(screeningdata2, iop_right_eye_od=="08"), ~study_id)
+# xtabs(data=screeningdata2, ~iop_left_eye_os, addNA=TRUE) # The "na" --> JK will fix in Redcap: xtabs(data=filter(screeningdata2, iop_left_eye_os=="na" | iop_left_eye_os=="09"), ~study_id)
+# screeningdata2$travel_cost <- as.numeric(screeningdata2$travel_cost)
+# screeningdata2$iop_left_eye_os <- as.numeric(screeningdata2$iop_left_eye_os)
+##BMS - Is it ok that NAs were introduced by coercion? # JK: see above; sometimes easier just to change in Redcap
+
+## BMS: Reviewing the skim file, there are a couple areas of "missing" data, in particular VCDR (several) and iop (1), 
+## I double checked and these were all correctly identified and VCDR was unobtainable 
+## At what stage do you remove these eyes from analysis? 
+#JK: do not remove. I don't think. 
+
+xtabs(data=screeningdata2, ~refer_positive+randomization_model, addNA=TRUE)
+
 
 # We essentially want only 2 main data frames: a wide one and long one.
 # I am only including the screeningdata and yingdata dataframes for now but we can add more before this point if needed
@@ -253,13 +298,11 @@ csdatawide <- full_join(screeningdata2, yingdata, by="study_id") %>%
          pecendil_referral_dr.le=referral_dr_le_or_pecen_v2,
          pecendil_referral_amd.le=referral_amd_le_or_pecen_v2,
          pecendil_referral_other.le=other_ref_le_or_pecen_v2) %>%
-  mutate(iop.re=as.numeric(iop.re),
-         iop.le=if_else(iop.le=="na", "", iop.le),
-         iop.le=as.numeric(iop.le),
-         travel_cost=as.numeric(travel_cost)) %>%
   # Now put all the re/le variables at the end so can reshape to long
   select(study_id:examiner_v2, end_time_ying_screen:examiner, dilated:eyeart_screen_outcome, eyeart_flag:oe_examiner, oe_tx_none:vf_testing_complete, vf_further_tx:eyeart_screen_outcome_oephoto, eyeart_result_dilate_opexam_complete,time_start_exam_or_pecen, this_form_refer_calc_pecen:pecen_review_screening_complete, this_form_refer_calc_pecen_v2:pecen_review_dilated_complete, everything()) # to find duplicate column names: select(csdata)
-
+csdatawide.addresses <- csdatawide %>%
+  select(study_id, address, current_address_provinc, current_address_amphoe,current_address_tambon)
+write_csv(csdatawide.addresses, "csdatawide.addresses.csv")
 
 csdatalong <- csdatawide %>%
   gather(variable, value, visual_symptoms.re:pecendil_referral_other.le) %>%
@@ -308,9 +351,9 @@ csdatalong <- csdatawide %>%
                   if_else(oe_dr %in% c(1,2),1,0)),  # xtabs(data=csdatalong, ~oe_anydr, addNA=TRUE)
          oe_anyglcfalse=if_else(is.na(oe_iop), NA_real_, 
                    if_else(oe_glaucomadx %in% c(1),1,0)),
-         oe_anyglc=if_else(oe_tx_missing==0,oe_anyglcfalse,0),
+         oe_anyglc=if_else(oe_tx_missing %in% 0,oe_anyglcfalse,0),
          oe_anyglcsuspect=if_else(is.na(oe_vcdr) & is.na(oe_iop), NA_real_, 
-                          if_else(oe_vcdr>0.6 | oe_iop>22,1,0)), 
+                          if_else((!is.na(oe_vcdr) & oe_vcdr>0.6) | oe_iop>22,1,0)), # xtabs(data=filter(csdatalong, is.na(oe_anyglcsuspect) & oe_anyglcfalse==0), ~study_id)
          oe_anyamddrglc=if_else(is.na(oe_anyamd) & is.na(oe_anydr) & is.na(oe_anydr),NA_real_,
                         if_else(oe_anyamd==1 | oe_anydr==1 | oe_anyglc==1,1,0)),
          oe_tx_catsurgnotmiss =if_else(oe_tx_missing==1, NA_real_, 
@@ -320,7 +363,31 @@ csdatalong <- csdatawide %>%
          oe_tx_rectxnotmiss =if_else(oe_tx_missing==1, NA_real_, 
                                if_else(oe_tx_rectx==1, 1, 0)),
          sumoedx=oe_anyamd+oe_anydr+oe_anyglc+oe_anyglcsuspect+oe_anyamddrglc+oe_tx_catsurgnotmiss+oe_tx_vftestnotmiss+oe_tx_rectxnotmiss,
-         clinic_attended_v2=recode_factor(clinic_attended_v2, '0'="Diabetes", '1'="Thyroid",'2'="General"))    
+         clinic_attended_v2=recode_factor(clinic_attended_v2, '0'="Diabetes", '1'="Thyroid",'2'="General")) %>%
+  group_by(study_id) %>% 
+  mutate(maxanyfail=max(screenfail_anycd), # So this is seeing whether the entire patient was referred, dichotomous 1/0
+         maxvafail=max(screenfail_va),
+         maxiopfail=max(screenfail_iop),
+         maxabnldiscfail=max(screenfail_abnldisc),
+         maxamdfail=max(screenfail_amd),
+         maxdrfail=max(screenfail_dr),
+         maxvcdrfail=max(screenfail_vcdr),
+         maxsxblurry=max(sx_blurry),
+         maxsxfloater=max(sx_floater),
+         maxsxflash=max(sx_flash),
+         maxsxscotoma=max(sx_scotoma),
+         maxsxother=max(sx_other),
+         maxsxany=if_else(maxsxblurry==1 | maxsxfloater==1 | maxsxflash==1 | maxsxscotoma==1 | maxsxother,1,0),
+         maxsxvisualsymptoms=max(visual_symptoms),
+         maxoeamd=max(oe_anyamd),
+         maxoedr=max(oe_anydr),
+         maxoeglc=max(oe_anyglcfalse),
+         maxoeglcsuspect=max(oe_anyglcsuspect),
+         maxoecataract=max(oe_tx_catsurgnotmiss),
+         maxoeiop=max(oe_iop, na.rm=TRUE),
+         maxoeiop=if_else(maxoeiop==-Inf, NA_real_, maxoeiop),
+         shouldcompletegs=ifelse((maxanyfail== 1 | randomization_model == "Refer"), 1, 0),
+         accountedfor=ifelse((ophthalmologist_exam_complete ==2 | phone_call_complete==2), 1, 0))
 
 addmargins(xtabs(data=filter(csdatalong, consent==1), ~ screenfail_anycd + refer_patient_randomizatio, addNA=TRUE))
 
@@ -330,11 +397,43 @@ addmargins(xtabs(data=filter(csdatalong, consent==1), ~ screenfail_anycd + refer
 # it was treating anything whose character was greater than 22 (eg, 3, 8, etc.) as fulfilling the criteria
 # So I added the as.numeric() and now it's working.
 # The way I troubleshot this was to make some dataframes with the ones that didn't make sense, and then just spot checked
-csdatalongreferralcheck <- csdatalong %>%
-  group_by(study_id) %>% # So this is seeing whether the entire patient was referred
-  mutate(maxanyfail=max(screenfail_anycd)) %>%
-  filter(maxanyfail!=refer_patient_randomizatio) %>%
-  select(consent, maxanyfail, refer_patient_randomizatio, iop, starts_with("screenfail"))
+
+
+# This for table 2 and text:
+patientscreenfails <- csdatalong %>% 
+  filter(eye=="re") %>% 
+  group_by(clinic_attended_v2) %>%
+  summarize(anyfail=sum(maxanyfail==1),
+            nonefailrandom=sum(maxanyfail==0 & randomization_model=="Refer", na.rm=TRUE),
+            vafail=sum(maxvafail==1), # xtabs(data=filter(csdatalongreferralcheck,is.na(maxvafail)), ~study_id)
+                                      # JK cleaned on redcap. Assumed zero letters for pinhole for 3093274 OS.
+            iopfail=sum(maxiopfail==1),
+            abnldiscfail=sum(maxabnldiscfail==1),
+            amdfail=sum(maxamdfail==1),
+            drfail=sum(maxdrfail==1),
+            vcdrfail=sum(maxvcdrfail==1),
+            blurry=sum(maxsxblurry==1),
+            floater=sum(maxsxfloater==1),
+            flash=sum(maxsxflash==1),
+            scotoma=sum(maxsxscotoma==1),
+            othersx=sum(maxsxother==1),
+            anysx=sum(maxsxany==1),
+            vis_sx=sum(maxsxvisualsymptoms==1),
+            anysx_total=sum(!is.na(maxsxany)),
+            anyfail_completedophthoexam=sum(!is.na(oe_anyamd) & maxanyfail==1),
+            nonefail_completedophthoexam=sum(!is.na(oe_anyamd) & maxanyfail==0 & randomization_model=="Refer", na.rm=TRUE))
+
+ts48.nonefail <- csdatalongreferralcheck %>% filter(!is.na(oe_anyamd) & maxanyfail==0 & randomization_model=="Refer") %>% select(starts_with("oe"))
+ts229.anyfail <- csdatalongreferralcheck %>% filter(!is.na(oe_anyamd) & maxanyfail==1) %>% select(starts_with("oe"))
+
+xtabs(data=csdatalongreferralcheck, ~accountedfor+shouldcompletegs, addNA=TRUE)
+xtabs(data=filter(csdatalongreferralcheck, shouldcompletegs==0 & accountedfor==1), ~study_id)
+# JK: Why are there missing values for shouldcompletegs? (It's because randomization_model is missing; Blake to randomize these)
+xtabs(data=filter(csdatalongreferralcheck, is.na(shouldcompletegs)), ~study_id+randomization_model, addNA=TRUE)
+# JK: 8 patients who didn't need a gold standard exam but got one. Agree with BMS to just ignore (ie not include in analysis)
+# gsts <- csdatalongreferralcheck %>% filter(is.na(shouldcompletegs)) %>% select(consent, maxanyfail, randomization_model, iop, oe_iop, starts_with("screenfail"))
+
+###   PREVIOUS CLEANING   ###
 # I saw that 0916205 had screenfail_iop==1 even though the IOP was 8. That meant there was something wrong with the screenfail_iop variable
 # The first thing to do then was to check the class, and I saw it was a character variable
 # I want you to be able to troubleshoot like this. 
@@ -345,32 +444,32 @@ csdatalongreferralcheck <- csdatalong %>%
 # I'm not sure how else to help you do it besides walk you through my thought process
 # But for example, you should check every single new variable to make sure it is doing what you want.
 # Had we done that, we might have done the following, which would have made it also obvious:
-xtabs(data=csdatalong, ~iop+screenfail_iop,addNA=TRUE) # I changed code, assuming that we didn't refer if missing IOP
+# xtabs(data=csdatalong, ~iop+screenfail_iop,addNA=TRUE) # I changed code, assuming that we didn't refer if missing IOP
 # Finishing for the rest of them...
 # The reason this is important is because we eventually want to see whether referring based on a specific test was sens/spec for diagnosing a specific disease
 # For example we wouldn't necessarily expect IOP to be a great test for DR/AMD.
-addmargins(xtabs(data=csdatalong, ~va+screenfail_va,addNA=TRUE))
+# addmargins(xtabs(data=csdatalong, ~va+screenfail_va,addNA=TRUE))
 # This shows that no one with presenting VA of 4 or 5 was referred (correct)
 # THe addmargins is nice because easier to add up 201+15+55+80=351
 # If vision <4, then got pinhole...
-addmargins(xtabs(data=filter(csdatalong, va<4), ~vaph+screenfail_va,addNA=TRUE))
+# addmargins(xtabs(data=filter(csdatalong, va<4), ~vaph+screenfail_va,addNA=TRUE))
 # Note 351 total, so this accounting for everyone it should.
 # Here it's cleaner (the 0/1/2/3 are referred, and the 4/5 are not)
-xtabs(data=csdatalong, ~photo_abdisc+screenfail_abnldisc,addNA=TRUE)
-xtabs(data=csdatalong, ~photo_abdisc+screenfail_abnldisccd,addNA=TRUE)
-xtabs(data=csdatalong, ~vcdr+screenfail_vcdr,addNA=TRUE)
+# xtabs(data=csdatalong, ~photo_abdisc+screenfail_abnldisc,addNA=TRUE)
+# xtabs(data=csdatalong, ~photo_abdisc+screenfail_abnldisccd,addNA=TRUE)
+# xtabs(data=csdatalong, ~vcdr+screenfail_vcdr,addNA=TRUE)
 # For this one, I don't think we want missing values. So I will change the above code to fix this.
-xtabs(data=csdatalong, ~vcdr+screenfail_vcdrcd,addNA=TRUE)
-xtabs(data=csdatalong, ~vcdr_program+screenfail_programvcdr,addNA=TRUE)
+# xtabs(data=csdatalong, ~vcdr+screenfail_vcdrcd,addNA=TRUE)
+# xtabs(data=csdatalong, ~vcdr_program+screenfail_programvcdr,addNA=TRUE)
 # Hard to see because so many values, try this instead:
-csdatalong %>% group_by(screenfail_programvcdr) %>% skim(vcdr_program)
+# csdatalong %>% group_by(screenfail_programvcdr) %>% skim(vcdr_program)
 # Again note that there are a bunch of negatives, but I am not sure we want that. I think we didn't refer if CD, right?
-csdatalong %>% group_by(screenfail_programvcdrcd) %>% skim(vcdr_program)
-xtabs(data=csdatalong, ~dr+screenfail_dr,addNA=TRUE)
-xtabs(data=csdatalong, ~dr+screenfail_drcd,addNA=TRUE)
-xtabs(data=csdatalong, ~amd+screenfail_amd,addNA=TRUE)
-xtabs(data=csdatalong, ~amd+screenfail_amdcd,addNA=TRUE)
-xtabs(data=csdatalong, ~other_referral+screenfail_other,addNA=TRUE)
+# csdatalong %>% group_by(screenfail_programvcdrcd) %>% skim(vcdr_program)
+# xtabs(data=csdatalong, ~dr+screenfail_dr,addNA=TRUE)
+# xtabs(data=csdatalong, ~dr+screenfail_drcd,addNA=TRUE)
+# xtabs(data=csdatalong, ~amd+screenfail_amd,addNA=TRUE)
+# xtabs(data=csdatalong, ~amd+screenfail_amdcd,addNA=TRUE)
+# xtabs(data=csdatalong, ~other_referral+screenfail_other,addNA=TRUE)
 # Noticed that there were no "2"'s for other_referral so deleted screenfail_othercd variable above
 # Do you want to check the rest of the variables we made to make sure everything worked?
 
@@ -379,6 +478,58 @@ addmargins(xtabs(data=filter(csdatalongreferralcheck, consent==1), ~ maxanyfail 
 #why is the above different then the below??? # because the above is based on person and the below is based on eye ie. some people had one positive eye and one negative eye
 addmargins(xtabs(data=filter(csdatalongreferralcheck, consent==1), ~ screenfail_anycd + refer_patient_randomizatio, addNA=TRUE))
 
+
+##########
+# Kappas for agreement to OpReview 
+###
+photoagreement <- full_join(csdatawide, jeremyreview, by="study_id") %>%
+  mutate(photoscreenpos=case_when((vcdr_referral.re== 1 | dr_referral.re==1 | amd_referral.re==1 | other_referral.re==1 | vcdr_referral.le==1 | referral_disc_abnormal.le==1 | dr_referral.le==1 | amd_referral.le==1 | other_referral.le==1) ~ 1,
+                                  (vcdr_referral.re== 0 & dr_referral.re==0 & amd_referral.re==0 & other_referral.re==0 & vcdr_referral.le==0 & referral_disc_abnormal.le==0 & dr_referral.le==0 & amd_referral.le==0 & other_referral.le==0) ~ 0,
+                                  TRUE ~ NA_real_),
+         year=year(start_time_inclusion),
+         month=month(start_time_inclusion,label=T),
+         yr_mo=(paste(year(start_time_inclusion),month(start_time_inclusion,label=T),sep="-"))) %>%
+  # select(photoscreenpos, this_form_referral) %>%
+  arrange(year,month) %>%
+  filter(!is.na(this_form_referral))
+
+photoagreement2 <- full_join(csdatawide, jeremyreview, by="study_id") %>%
+  select(refer_patient_screen_cal, this_form_referral) %>%
+  filter(!is.na(this_form_referral))
+
+# JK: I think irr package masks other things so prefer not to call it, just use it before the kappa2 command...
+(irr::kappa2(photoagreement %>% select(photoscreenpos,this_form_referral), weight = "unweighted", sort.levels = FALSE))
+(irr::kappa2(photoagreement2 %>% select(refer_patient_screen_cal,this_form_referral), weight = "unweighted", sort.levels = FALSE))
+# JK: kappa is pretty low.
+
+# JM - this is a for loop that will run through calculating kappas at each month
+allyrmo <- photoagreement %>% select(yr_mo) %>% distinct() %>% pull()
+kappalist=data.frame()
+for (value in allyrmo){
+  kappa <-(irr::kappa2(photoagreement %>% filter(yr_mo==value) %>% select(photoscreenpos,this_form_referral), weight = "unweighted", sort.levels = FALSE))[5]
+  n <-(irr::kappa2(photoagreement %>% filter(yr_mo==value) %>% select(photoscreenpos,this_form_referral), weight = "unweighted", sort.levels = FALSE))[2]
+  df <- data.frame(month=c(value),n,kappa) %>% rename(kappa=value) 
+  kappalist <- bind_rows(kappalist,df)
+}
+kappalist # JM - this output shows the month, subjects included in the calculation, and the resulting kappa (for photo referrals)
+# try doing the above steps I did in lines 654-676 for photoagreement2 (any referral)
+
+# Text only: age sex of overall population:
+csdatawide %>% 
+  filter(consent == 1) %>%
+  summarize(consentyes_num=sum(consent==1),
+            consentyes_total=sum(!is.na(consent)),
+            consentyes_per=(consentyes_num/consentyes_total),
+            female_num=sum(sex1==1),
+            female_total=sum(!is.na(sex1)),
+            female_per=female_num/female_total,
+            age_p50=quantile(age, 2/4),
+            age_p25=quantile(age, 1/4),
+            age_p75=quantile(age, 3/4),
+            age_total=sum(!is.na(age))) %>%
+  gather(field, value, consentyes_num:age_total) %>%
+  separate(field, into=c("variable","stat"), sep="_") %>%
+  spread(stat, value)
 #Table 2: demographics by clinic
 # JK: I think better that we use the original data to do this, and then in the code filter things as needed
 # Because when you create lots of different objects, it can get confusing to figure out when numbers don't match up
@@ -423,10 +574,16 @@ demographicstablelong <- demographicstable %>%
 csdatawide %>% filter(diagnosis_of_diabetes==1 & is.na(years_with_diabetes)) %>% select(study_id)
 
 
+prostheses <- csdatalong %>%
+  filter(grepl("prosthe",notes_for_flag) | grepl("prosthe",oe_majorcause_specother)) %>%
+  select(study_id, eye,  va,iop, vcdr, dr, amd, notes_for_flag, oe_majorcause_specother, screenfail_anycd, screenfail_va, randomization_model)
+# JK: Not sure but the notes_for_flag seems to be an error since there is screening data for everything
+# So will only exclude 3867078 OS
 # Table 3
 # NEED TO INVESTIGATE THE MISSING VALUES!!
 table3 <- csdatalong %>%
   filter(consent==1) %>%
+  filter(!(study_id==3867078 & eye=="le")) %>%
   group_by(clinic_attended_v2) %>%
   summarize(vafail_num=sum(screenfail_va==1, na.rm=TRUE),
             vafail_total=sum(!is.na(screenfail_va)),
@@ -446,6 +603,9 @@ table3 <- csdatalong %>%
             drfail_num=sum(screenfail_dr==1, na.rm=TRUE),
             drfail_total=sum(!is.na(screenfail_dr)),
             drfail_per=drfail_num/drfail_total,
+            photofail_num=sum(screenfail_abnldisc==1 | screenfail_vcdr==1 | screenfail_amd==1 | screenfail_dr==1),
+            photofail_total=sum(!is.na(screenfail_abnldisc) & !is.na(screenfail_vcdr) & !is.na(screenfail_amd) & !is.na(screenfail_dr)),
+            photofail_per=photofail_num/photofail_total,
             anyfail_num=sum(screenfail_any==1, na.rm=TRUE),
             anyfail_total=sum(!is.na(screenfail_any)),
             anyfail_per=anyfail_num/anyfail_total) %>%
@@ -454,8 +614,6 @@ table3 <- csdatalong %>%
   mutate(clinicstat=paste(clinic_attended_v2, stat, sep="_")) %>%
   select(-clinic_attended_v2, -stat) %>%
   spread(clinicstat, value)
-
-## JK STOPPED HERE...
 
 #Table 4 line by line
 addmargins(xtabs(data=filter(csdatalong, consent==1), ~ oe_anyamd + dmclinic, addNA = TRUE))
@@ -467,10 +625,23 @@ addmargins(xtabs(data=filter(csdatalong, consent==1), ~ oe_tx_vftestnotmiss  + d
 addmargins(xtabs(data=filter(csdatalong, consent==1), ~ oe_tx_catsurgnotmiss  + dmclinic, addNA = TRUE))
 addmargins(xtabs(data=filter(csdatalong, consent==1), ~ oe_tx_rectxnotmiss + dmclinic, addNA = TRUE))
 
-##table 4 wide
-table4wide <- csdatalong%>%
+# Text: These give the number of patients and eyes that actually got an ophthalmology exam
+xtabs(data=filter(csdatalong, consent==1 & !is.na(oe_anyamd) & eye=="re"), ~clinic_attended_v2,addNA=TRUE)
+xtabs(data=filter(csdatalong, consent==1 & !is.na(oe_anyamd)), ~clinic_attended_v2,addNA=TRUE)
+# Noticed a missing cataract, looked up on Redcap and patient did not have cataract so OK to just take the numerator:
+ts <- csdatalong %>%
   filter(consent==1) %>%
-  group_by(dmclinic, screenfail_anycd)%>%
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
+  filter(is.na(oe_tx_catsurgnotmiss) & !is.na(oe_iop)) %>%
+  select(study_id, eye)
+
+##table 4 wide -- eye level
+table4wide <- csdatalong %>%
+  filter(consent==1) %>%
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
+  group_by(clinic_attended_v2, screenfail_anycd) %>%
   summarize(consent_n=sum(!is.na(consent)),
             oe_anyamd.mean=mean(oe_anyamd, na.rm=TRUE), 
             oe_anyamd.num=sum(oe_anyamd == 1, na.rm=TRUE),
@@ -478,9 +649,9 @@ table4wide <- csdatalong%>%
             oe_anydr.mean=mean(oe_anydr, na.rm=TRUE), 
             oe_anydr.num=sum(oe_anydr == 1, na.rm=TRUE),
             oe_anydr.denom=sum(!is.na(oe_anydr), na.rm=TRUE),
-            oe_anyglc.mean=mean(oe_anyglc, na.rm=TRUE), 
-            oe_anyglc.num=sum(oe_anyglc == 1, na.rm=TRUE),
-            oe_anyglc.denom=sum(!is.na(oe_anyglc), na.rm=TRUE),
+            oe_anyglc.mean=mean(oe_anyglcfalse, na.rm=TRUE), 
+            oe_anyglc.num=sum(oe_anyglcfalse == 1, na.rm=TRUE),
+            oe_anyglc.denom=sum(!is.na(oe_anyglcfalse), na.rm=TRUE),
             oe_anyglcsuspect.mean=mean(oe_anyglcsuspect, na.rm=TRUE), 
             oe_anyglcsuspect.num=sum(oe_anyglcsuspect == 1, na.rm=TRUE),
             oe_anyglcsuspect.denom=sum(!is.na(oe_anyglcsuspect), na.rm=TRUE),
@@ -496,6 +667,144 @@ table4wide <- csdatalong%>%
             oe_tx_rectxnotmiss.mean=mean(oe_tx_rectxnotmiss, na.rm=TRUE), 
             oe_tx_rectxnotmiss.num=sum(oe_tx_rectxnotmiss == 1, na.rm=TRUE),
             oe_tx_rectxnotmiss.denom=sum(!is.na(oe_tx_rectxnotmiss), na.rm=TRUE))
+
+##table 4 wide -- patient level
+table4.patient <- csdatalong %>%
+  filter(consent==1 & eye=="re" & !is.na(maxoeiop)) %>%
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
+  group_by(clinic_attended_v2, maxanyfail) %>%
+  summarize(consent_n=sum(consent==1),
+            oe_anyamd.num=sum(maxoeamd == 1),
+            oe_anyamd.denom=sum(!is.na(maxoeamd)),
+            oe_anyamd.prop=oe_anyamd.num/oe_anyamd.denom,
+            oe_anydr.num=sum(maxoedr == 1),
+            oe_anydr.denom=sum(!is.na(maxoedr)),
+            oe_anydr.prop=oe_anydr.num/oe_anydr.denom,
+            oe_anyglcsus.num=sum(maxoeglcsuspect == 1),
+            oe_anyglcsus.denom=sum(!is.na(maxoeglcsuspect)),
+            oe_anyglcsus.prop=oe_anyglcsus.num/oe_anyglcsus.denom,
+            oe_anycataract.num=sum(maxoecataract == 1),
+            oe_anycataract.denom=sum(!is.na(maxoecataract)),
+            oe_anycataract.prop=oe_anycataract.num/oe_anycataract.denom)
+
+
+addmargins(xtabs(data=csdatalong, ~screenfail_va+clinic_attended_v2, addNA=TRUE))
+t5.va.ppv.eye <- csdatalong %>%
+  filter(consent==1 & screenfail_va==1 & !is.na(oe_iop)) %>%
+  filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  ungroup() %>%
+  # group_by(clinic_attended_v2) %>%
+  summarize(TOTALFAIL=sum(!is.na(screenfail_va)),
+            TOTALEXAMINED=sum(!is.na(oe_iop)),
+            ppv_cataract_num=sum(oe_tx_catsurgnotmiss==1, na.rm=TRUE),
+            ppv_cataract_total=sum(!is.na(oe_tx_catsurgnotmiss==1)),
+            ppv_cataract_prop=ppv_cataract_num/ppv_cataract_total,
+            ppv_dr_num=sum(oe_anydr==1, na.rm=TRUE),
+            ppv_dr_total=sum(!is.na(oe_anydr==1)),
+            ppv_dr_prop=ppv_dr_num/ppv_dr_total,
+            ppv_amd_num=sum(oe_anyamd==1, na.rm=TRUE),
+            ppv_amd_total=sum(!is.na(oe_anyamd==1)),
+            ppv_amd_prop=ppv_amd_num/ppv_amd_total)
+t5.va.npv.eye <- csdatalong %>%
+  filter(consent==1 & screenfail_va==0 & !is.na(oe_iop)) %>%
+  filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  ungroup() %>%
+  # group_by(clinic_attended_v2) %>%
+  summarize(TOTALNOTFAIL=sum(!is.na(screenfail_va)),
+            TOTALEXAMINED=sum(!is.na(oe_iop)),
+            npv_cataract_num=sum(oe_tx_catsurgnotmiss==0, na.rm=TRUE),
+            npv_cataract_total=sum(!is.na(oe_tx_catsurgnotmiss==0)),
+            npv_cataract_prop=npv_cataract_num/npv_cataract_total,
+            npv_dr_num=sum(oe_anydr==0, na.rm=TRUE),
+            npv_dr_total=sum(!is.na(oe_anydr==0)),
+            npv_dr_prop=npv_dr_num/npv_dr_total,
+            npv_amd_num=sum(oe_anyamd==0, na.rm=TRUE),
+            npv_amd_total=sum(!is.na(oe_anyamd==0)),
+            npv_amd_prop=npv_amd_num/npv_amd_total)
+
+# PATIENT LEVEL
+# OK I think that the survey design weights would be 1/229 for the anyfail group and 1/660 for the nonefailed group.
+library(survey)
+data(api)
+xtabs(data=apistrat, ~pw+fpc)
+# So fpc needs to be 229 and 660
+# and weights need to be 1 [1/(229/229)] and 8.91 [1/(74/660)]
+# Though this does not account for non-response weights
+# https://bookdown.org/jespasareig/Book_How_to_weight_a_survey/nonresponse-weights.html
+# Note I am basing this on the numbers failing/not failing and not the numbers presenting for exam. I am not sure which is correct.
+csdatalong2 <- csdatalong %>%
+  filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
+  filter(consent==1 & eye=="re" & !is.na(maxoeiop)) %>%
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  mutate(pw=case_when(maxanyfail==1 ~ 1,
+                      maxanyfail==0 ~ 1/(74/660),
+                      TRUE ~ NA_real_),
+         fpc=case_when(maxanyfail==1 ~ 229,
+                      maxanyfail==0 ~ 660,
+                      TRUE ~ NA_real_))
+# So then the PPV of any failed test for cataract:
+# First without weights:
+xtabs(data=filter(csdatalong2, maxanyfail==1), ~maxoecataract)
+ppv.anyfail.cataract = lm(maxoecataract ~ 1, data=filter(csdatalong2, maxanyfail==1))
+summary(ppv.anyfail.cataract)
+# Now with weights (it's the same, as it should be):
+anyfail.surv <- svydesign(id=~1,strata=~maxanyfail, weights=~pw, data=filter(csdatalong2, maxanyfail==1), fpc=~fpc)
+(ppv.anyfail.cataract.svy <- svyglm(maxoecataract ~ 1, anyfail.surv))
+# And now the PPV of any failed test for DR:
+# First without weights:
+xtabs(data=filter(csdatalong2, maxanyfail==1), ~maxoedr)
+ppv.anyfail.dr = lm(maxoedr ~ 1, data=filter(csdatalong2, maxanyfail==1))
+summary(ppv.anyfail.dr)
+# Now with weights (it's the same, as it should be, since this is a patient level analysis.):
+(ppv.anyfail.dr.svy <- svyglm(maxoedr ~ 1, anyfail.surv))
+# What about sensitivity?
+
+# First without weights:
+xtabs(data=filter(csdatalong2, maxoedr==1), ~maxanyfail)
+sens.anyfail.dr = lm(maxanyfail ~ 1, data=filter(csdatalong2, maxoedr==1))
+summary(sens.anyfail.dr)
+# With weights
+dr.yes.surv.anyfail <- svydesign(id=~1,strata=~maxanyfail, weights=~pw, data=filter(csdatalong2, maxoedr==1), fpc=~fpc)
+(sens.anyfail.dr.svy <- svyglm(maxanyfail ~ 1, dr.yes.surv.anyfail))
+# It's a lower estimate with the sampling weights. Only 71% compared with 96% if no weights. That seems about right. 
+
+t5.va.ppv.pt <- csdatalong %>%
+  filter(maxvafail==1) %>%
+  ungroup() %>%
+  # group_by(clinic_attended_v2) %>%
+  summarize(ppv_cataract_num=sum(maxoecataract==1, na.rm=TRUE),
+            ppv_cataract_total=sum(!is.na(maxoecataract==1)),
+            ppv_cataract_prop=ppv_cataract_num/ppv_cataract_total,
+            ppv_dr_num=sum(maxoedr==1, na.rm=TRUE),
+            ppv_dr_total=sum(!is.na(maxoedr==1)),
+            ppv_dr_prop=ppv_dr_num/ppv_dr_total,
+            ppv_amd_num=sum(maxoeamd==1, na.rm=TRUE),
+            ppv_amd_total=sum(!is.na(maxoeamd==1)),
+            ppv_amd_prop=ppv_amd_num/ppv_amd_total)
+t5.va.npv.pt <- csdatalong %>%
+  filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
+  filter(consent==1 & eye=="re" & !is.na(maxoeiop)) %>%
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  filter(maxvafail==0) %>%
+  group_by(maxanyfail) %>%
+  # group_by(clinic_attended_v2) %>%
+  summarize(ppv_cataract_num=sum(maxoecataract==0, na.rm=TRUE),
+            ppv_cataract_total=sum(!is.na(maxoecataract)),
+            ppv_cataract_prop=ppv_cataract_num/ppv_cataract_total,
+            ppv_dr_num=sum(maxoedr==0, na.rm=TRUE),
+            ppv_dr_total=sum(!is.na(maxoedr)),
+            ppv_dr_prop=ppv_dr_num/ppv_dr_total,
+            ppv_amd_num=sum(maxoeamd==0, na.rm=TRUE),
+            ppv_amd_total=sum(!is.na(maxoeamd)),
+            ppv_amd_prop=ppv_amd_num/ppv_amd_total)
+
+ts <- csdatalong %>%
+  filter(consent==1  & !is.na(maxoeiop)) %>%
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  filter(maxvafail==0)
 
 tsscreenfail <- csdatalong %>%
   filter(is.na(screenfail_anycd))
