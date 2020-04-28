@@ -981,17 +981,42 @@ addmargins(xtabs(data=filter(cmvrdatalong, studyid=="C136"), ~redcap_week+eye, a
 ###################################################
 
 addmargins(xtabs(data=filter(cmvrdatalong, eye=="od_" & redcap_week==0), ~studyid+ visit_laterality))
-qol0data <- cmvrdatalong %>%
+tsts <- cmvrdatalong %>%
+  filter(eye=="od_" & redcap_week==0) %>%
+  select(studyid, visit_laterality, eye) %>%
+  rename(tstslat=visit_laterality)
+tstsmerge <- full_join(tsts, firstcmv.data.patient, by="studyid")
+xtabs(data=tstsmerge, ~tstslat+visit_laterality, addNA=TRUE)
+xtabs(data=filter(tstsmerge, visit_laterality==1 & tstslat==0), ~studyid+hivdx)
+xtabs(data=filter(tstsmerge, is.na(visit_laterality) & tstslat==1), ~studyid+hivdx, addNA=TRUE)
+xtabs(data=filter(cmvrdatalong, studyid=="C129"), ~hivdx, addNA=TRUE)
+# Note that C33 had CWS at initial dx, eventually CMVR. Should we code as CMVR? Let's try to find the photo
+# Note that C33 included in Louisa's study so a little simpler?? Though C43 not cooperating...
+# C43 developed definitive CMVR at week 13
+# C129 did not have HIV, so excluded for that reason.
+
+cmvrdatalong %>% ungroup() %>% select(starts_with("hk")) %>% skim()
+qoldata <- cmvrdatalong %>%
+  filter(studyid!="C129") %>% # C129 didn't have HIV
   group_by(studyid) %>%
   mutate(baselinecmvr_work=if_else(visit_laterality>0 & redcap_week==0, 1, 0),
          baselinecmvr.either=max(baselinecmvr_work, na.rm=TRUE),
          baselineeq5_work=if_else(redcap_week==0, eq5score, NA_real_),
          baselineeq5=max(baselineeq5_work, na.rm=TRUE),
-         evercmvr=if_else(visit_laterality>0,1,0)) %>%
+         evercmvr=if_else(visit_laterality>0,1,0),
+         new_cd4_count100=new_cd4_count/100,
+         new_cd4_lt50=new_cd4_count<50,
+         new_cd4_lt100=new_cd4_count<100,
+         agedecade=age/10) %>%
   group_by(studyid, redcap_week) %>%
   mutate(cmvr.either=if_else(visit_laterality>0, 1, 0),
          wt2060.bettereye=if_else(min(logmar)>0.47712125471966,1,0),
          wt20400.bettereye=if_else(min(logmar)>1.301029995664,1,0),
+         num.inductions=sum(induction),
+         va.bettereye=min(logmar),
+         va.bettereye.lines=va.bettereye*10,
+         va.worseeye=max(logmar),
+         va.worseeye.lines=va.worseeye*10,
          distancesum = (hk1 + hk2 + hk3 +hk4 +hk5 +hk6),
          distancestand = (hk1 + hk2 + hk3 +hk4 +hk5 +hk6) * (100/(4*6)),
          nearsum = (hk7 + hk8 + hk9 +hk10 +hk11 +hk12 +hk13),
@@ -1006,9 +1031,13 @@ qol0data <- cmvrdatalong %>%
          totalhkstand = (hk1 + hk2 + hk3 +hk4 +hk5 +hk6 + hk7 + hk8 + hk9 +hk10 +hk11 +hk12 +hk13 + hk14 +hk15 + hk16 +hk17 + hk18 + hk19 + hk20 +hk21 + hk22 + hk23 + hk24) * (100/(4*24))) %>%
   filter(eye=="od_" & redcap_week %in% c(0,4,24,52)) # Make sure we're not excluding anyone with only a left eye: xtabs(data=cmvrdatalong, ~redcap_week+eye, addNA=TRUE)
   
-
+addmargins(xtabs(data=filter(tstsmerge, studyid!="C129"), ~tstslat+visit_laterality, addNA=TRUE))
+xtabs(data=filter(qoldata, redcap_week==0), ~cmvr.either, addNA=TRUE)
+# Pointing out the differences between this and Louisa's. Louisa said 76 with CMVR but 2 of these (C33, C43) were not at baseline
+# So it should be 74 with CMVR and 75 without (never, I guess) but also 2 more that didn't have at baseline but eventually did develop.
+# So that means 74 with, 77 without
 # PLEASE ADD BILATERAL CMVR/UNILATERAL CMVR
-qol_table1 <- qol0data %>%
+qol_table1 <- qoldata %>%
   filter(redcap_week==0) %>%
   group_by(cmvr.either) %>%
   summarize(mean_eq5=mean(eq5score),
@@ -1023,153 +1052,381 @@ qol_table1 <- qol0data %>%
             median_vaph=median(va_ph, na.rm=TRUE),
             num_wt2060bettereye=sum(wt2060.bettereye==1, na.rm=TRUE),
             count_wt2060bettereye=sum(!is.na(wt2060.bettereye)),
+            prop_wt2060bettereye=num_wt2060bettereye/count_wt2060bettereye,
             num_wt20400bettereye=sum(wt20400.bettereye==1, na.rm=TRUE),
             count_wt20400bettereye=sum(!is.na(wt20400.bettereye)),
+            prop_wt20400bettereye=num_wt20400bettereye/count_wt20400bettereye,
             num_univi=sum(uni_vi==1, na.rm=TRUE),
             count_univi=sum(!is.na(uni_vi)),
-            prop_univi=mean(uni_vi==1, na.rm=TRUE),
+            prop_univi=num_univi/count_univi,
             num_bivi=sum(bi_vi==1, na.rm=TRUE),
             count_bivi=sum(!is.na(bi_vi)),
-            prop_bivi=mean(bi_vi==1, na.rm=TRUE),
+            prop_bivi=num_bivi/count_bivi,
             num_uniblind=sum(uni_blind==1, na.rm=TRUE),
             count_uniblind=sum(!is.na(uni_blind)),
-            prop_uniblind=mean(uni_blind==1, na.rm=TRUE),
+            prop_uniblind=num_uniblind/count_uniblind,
             num_biblind=sum(bi_blind==1, na.rm=TRUE),
             count_biblind=sum(!is.na(bi_blind)),
-            prop_biblind=mean(bi_blind==1, na.rm=TRUE),
+            prop_biblind=num_biblind/count_biblind,
             median_moshiv=median(monthssincehiv, na.rm=TRUE),
             p25_moshiv=quantile(monthssincehiv, 1/4),
-            p75_moshiv=quantile(monthssincehiv, 3/4),           
+            p75_moshiv=quantile(monthssincehiv, 3/4), 
+            count_moshiv=sum(!is.na(monthssincehiv)),
             count_cd4=sum(!is.na(new_cd4_count)),
             median_cd4=median(new_cd4_count, na.rm=TRUE),
             p25_cd4=quantile(new_cd4_count, 1/4, na.rm=TRUE),
             p75_cd4=quantile(new_cd4_count, 3/4, na.rm=TRUE),
-            count_haart=sum(haart==1, na.rm=TRUE),
+            num_haart=sum(haart==1, na.rm=TRUE),
+            count_haart=sum(!is.na(haart)),
+            prop_haart=num_haart/count_haart,
             num_rd=sum(new_rd==1, na.rm=TRUE),
             count_rd=sum(!is.na(new_rd)),
+            prop_rd=num_rd/count_rd,
             num_nord=sum(new_rd==0, na.rm=TRUE),
-            count_nord=sum(!is.na(new_rd))) %>%
-  gather(field, value, mean_eq5:count_nord) %>%
+            count_nord=sum(!is.na(new_rd)),
+            prop_nord=num_nord/count_nord) %>%
+  gather(field, value, mean_eq5:prop_nord) %>%
   separate(field, into=c("stat", "var"), sep="_") %>%
   mutate(groupstat=paste(cmvr.either, stat, sep="_")) %>%
   select(-stat, -cmvr.either) %>%
   spread(groupstat, value, convert=TRUE) %>%
-  select(var, `0_count`, `0_mean`, `0_sd`, `0_median`, `0_p25`, `0_p75`, `0_num`, `0_prop`, `1_count`, `1_mean`, `1_sd`, `1_median`, `1_p25`, `1_p75`, `1_num`, `1_prop`)
+  select(var, `0_count`, `0_mean`, `0_sd`, `0_median`, `0_p25`, `0_p75`, `0_num`, `0_prop`, 
+         `1_count`, `1_mean`, `1_sd`, `1_median`, `1_p25`, `1_p75`, `1_num`, `1_prop`)
 
-
-# GETTING CONFIDENCE INTERVALS, ANYCMVR
-model1_nocmv <- lm(eq5score ~ anycmvr, data=qol0data)
-# Note that you can get the mean and 95%CI for the anycmvr==0 group from the summary and confint, looking at intercept
-summary(model1_nocmv)
-confint(model1_nocmv)
-library(broom)
-tidy.model1_nocmv <- tidy(model1_nocmv, conf.int = TRUE)
-# Easy way to get mean/CI of the anycmvr==1 group is to make the reference level be "1", then just read off the intercept:
-model1_cmv <- lm(eq5score ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
-summary(model1_cmv)
-confint(model1_cmv)
-tidy.model1_cmv <- tidy(model1_cmv, conf.int = TRUE)
-# WHAT ABOUT LATERALITY?
-# Note we need to specify it's a factor because otherwise treats as a continuous variable
-model1_lat <- lm(eq5score ~ factor(visit_laterality), data=qol0data)
-# To get omnibus p-value for the laterality categorical variable, use a likelihood ratio test
-# Basically make 2 models. One with the categorical variable and one without. Then run an ANOVA comparing the 2 models.
-# So this is the model without the visit_laterality term
-model1_nolat <- lm(eq5score ~ 1, data=qol0data)
-# And get the p-value from this ANOVA
-anova(model1_lat, model1_nolat)
-# And the means/CIs for the uni vs bilateral:
-model1_lat_uni <- lm(eq5score ~ factor(visit_laterality, levels=c("1", "0", "2")), data=qol0data)
-summary(model1_lat_uni)
-model1_lat_bi <- lm(eq5score ~ factor(visit_laterality, levels=c("2", "0", "1")), data=qol0data)
-summary(model1_lat_bi)
-# So the bilateral ones didn't have worse QOL...
-
-#? Does HAART effect QOL? 
-model1_haart1 <- lm(eq5score ~ factor(haart, levels=c("1", "0")), data=qol0data)
-summary(model1_haart)
-model1_haart0 <- lm(eq5score ~ factor(haart, levels=c("0", "1")), data=qol0data)
-summary(model1_haart0)
-# JM - adding in the model without haart to get p-value from anova (aka likelihood ratio test LRT)
-model1_nohaart <- lm(eq5score ~ 1, data=qol0data %>% filter(haart %in% c("1","0")))
-anova(model1_haart1,model1_nohaart)               # JM - ^you have to filter this model so that it uses the same dataset
-#       as the one with the predictor variable
-# JM - looks like haart is only marginally significant (0.05<p<0.1)
-model1_cd4 <- lm(eq5score ~ new_cd4_count, data=qol0data)
-summary(model1_cd4)
-tidy(model1_cd4, conf.int = TRUE)
-
-# HONG KONG
-# Anycmvr for total and 5 catagories for hk
-#total
-modelhktot_nocmv <- lm(totalhkstand ~ anycmvr, data=qol0data)
-summary(modelhktot_nocmv)
-confint(modelhktot_nocmv)
-modelhktot_cmv <- lm(totalhkstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
-summary(modelhktot_cmv)
-confint(modelhktot_cmv)
-#distance
-modelhkdist_nocmv <- lm(distancestand ~ anycmvr, data=qol0data)
-summary(modelhkdist_nocmv)
-confint(modelhkdist_nocmv)
-modelhkdist_cmv <- lm(distancestand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
-summary(modelhkdist_cmv)
-confint(modelhkdist_cmv)
-#near
-modelhknear_nocmv <- lm(nearstand ~ anycmvr, data=qol0data)
-summary(modelhknear_nocmv)
-confint(modelhknear_nocmv)
-modelhknear_cmv <- lm(nearstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
-summary(modelhknear_cmv)
-confint(modelhknear_cmv)
-#social
-modelhksoc_nocmv <- lm(socialstand ~ anycmvr, data=qol0data)
-summary(modelhksoc_nocmv)
-confint(modelhksoc_nocmv)
-modelhksoc_cmv <- lm(socialstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
-summary(modelhksoc_cmv)
-confint(modelhksoc_cmv)
-#cataract
-modelhkcat_nocmv <- lm(catstand ~ anycmvr, data=qol0data)
-summary(modelhkcat_nocmv)
-confint(modelhkcat_nocmv)
-modelhkcat_cmv <- lm(catstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
-summary(modelhkcat_cmv)
-confint(modelhkcat_cmv)
-#hkqol subsection
-modelhkqolsub_nocmv <- lm(qolstand ~ anycmvr, data=qol0data)
-summary(modelhkqolsub_nocmv)
-confint(modelhkqolsub_nocmv)
-modelhkqolsub_cmv <- lm(qolstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
-summary(modelhkqolsub_cmv)
-confint(modelhkqolsub_cmv)
-
-# LONGITUDINAL?
-addmargins(xtabs(data=cmvrdatalong, ~eq5score+redcap_week))
-# So month 6 seems best...
-
-# THIS NOT CORRECT YET; NEED TO EXCLUDE PEOPLE WHO SUBSEQUENTLY DEVELOPED CMVR; OR MAYBE HAVE THEM SWITCH GROUPS OR SOMETHING
-
-
-
-qol_longitudinaltable <- qol_longitudinaldata %>%
-  filter(redcap_week %in% c(0,24)) %>%
-  group_by(baselinecmvr, redcap_week) %>%
-  summarize(mean_eq5=mean(eq5score, na.rm=TRUE),
-            count_eq5=sum(!is.na(eq5score)))
-
-library(lme4)  
-model_long_int <- lmer(eq5score ~ redcap_week*baselinecmvr + (1|studyid), data=filter(qol_longitudinaldata, redcap_week %in% c(0,24)))
-summary(model_long_int)
-# Interaction term not significant; this would indicate that rate of change is different between the two groups
-# So just do a simple linear regression adjusting for baseline values
-model_long24 <- lm(eq5score ~ baselinecmvr + baselineeq5, data=filter(qol_longitudinaldata, redcap_week==24))
-summary(model_long24)
+# Main analysis
+# m1 <- lm(eq5score ~ cmvr.either + logmar + age + new_cd4_count, data=filter(qol0data, redcap_week==0))
+# summary(m1)
+# m2 <- lm(totalhkstand ~ cmvr.either + logmar + age + new_cd4_count, data=filter(qol0data, redcap_week==0))
+# summary(m2)
+# 
+# # GETTING CONFIDENCE INTERVALS, ANYCMVR
+# model1_nocmv <- lm(eq5score ~ anycmvr, data=qol0data)
+# # Note that you can get the mean and 95%CI for the anycmvr==0 group from the summary and confint, looking at intercept
+# summary(model1_nocmv)
+# confint(model1_nocmv)
+# library(broom)
+# tidy.model1_nocmv <- tidy(model1_nocmv, conf.int = TRUE)
+# # Easy way to get mean/CI of the anycmvr==1 group is to make the reference level be "1", then just read off the intercept:
+# model1_cmv <- lm(eq5score ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
+# summary(model1_cmv)
+# confint(model1_cmv)
+# tidy.model1_cmv <- tidy(model1_cmv, conf.int = TRUE)
+# # WHAT ABOUT LATERALITY?
+# # Note we need to specify it's a factor because otherwise treats as a continuous variable
+# model1_lat <- lm(eq5score ~ factor(visit_laterality), data=qol0data)
+# # To get omnibus p-value for the laterality categorical variable, use a likelihood ratio test
+# # Basically make 2 models. One with the categorical variable and one without. Then run an ANOVA comparing the 2 models.
+# # So this is the model without the visit_laterality term
+# model1_nolat <- lm(eq5score ~ 1, data=qol0data)
+# # And get the p-value from this ANOVA
+# anova(model1_lat, model1_nolat)
+# # And the means/CIs for the uni vs bilateral:
+# model1_lat_uni <- lm(eq5score ~ factor(visit_laterality, levels=c("1", "0", "2")), data=qol0data)
+# summary(model1_lat_uni)
+# model1_lat_bi <- lm(eq5score ~ factor(visit_laterality, levels=c("2", "0", "1")), data=qol0data)
+# summary(model1_lat_bi)
+# # So the bilateral ones didn't have worse QOL...
+# 
+# #? Does HAART effect QOL? 
+# model1_haart1 <- lm(eq5score ~ factor(haart, levels=c("1", "0")), data=qol0data)
+# summary(model1_haart)
+# model1_haart0 <- lm(eq5score ~ factor(haart, levels=c("0", "1")), data=qol0data)
+# summary(model1_haart0)
+# # JM - adding in the model without haart to get p-value from anova (aka likelihood ratio test LRT)
+# model1_nohaart <- lm(eq5score ~ 1, data=qol0data %>% filter(haart %in% c("1","0")))
+# anova(model1_haart1,model1_nohaart)               # JM - ^you have to filter this model so that it uses the same dataset
+# #       as the one with the predictor variable
+# # JM - looks like haart is only marginally significant (0.05<p<0.1)
+# model1_cd4 <- lm(eq5score ~ new_cd4_count, data=qol0data)
+# summary(model1_cd4)
+# tidy(model1_cd4, conf.int = TRUE)
+# 
+# # HONG KONG
+# # Anycmvr for total and 5 catagories for hk
+# #total
+# modelhktot_nocmv <- lm(totalhkstand ~ anycmvr, data=qol0data)
+# summary(modelhktot_nocmv)
+# confint(modelhktot_nocmv)
+# modelhktot_cmv <- lm(totalhkstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
+# summary(modelhktot_cmv)
+# confint(modelhktot_cmv)
+# #distance
+# modelhkdist_nocmv <- lm(distancestand ~ anycmvr, data=qol0data)
+# summary(modelhkdist_nocmv)
+# confint(modelhkdist_nocmv)
+# modelhkdist_cmv <- lm(distancestand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
+# summary(modelhkdist_cmv)
+# confint(modelhkdist_cmv)
+# #near
+# modelhknear_nocmv <- lm(nearstand ~ anycmvr, data=qol0data)
+# summary(modelhknear_nocmv)
+# confint(modelhknear_nocmv)
+# modelhknear_cmv <- lm(nearstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
+# summary(modelhknear_cmv)
+# confint(modelhknear_cmv)
+# #social
+# modelhksoc_nocmv <- lm(socialstand ~ anycmvr, data=qol0data)
+# summary(modelhksoc_nocmv)
+# confint(modelhksoc_nocmv)
+# modelhksoc_cmv <- lm(socialstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
+# summary(modelhksoc_cmv)
+# confint(modelhksoc_cmv)
+# #cataract
+# modelhkcat_nocmv <- lm(catstand ~ anycmvr, data=qol0data)
+# summary(modelhkcat_nocmv)
+# confint(modelhkcat_nocmv)
+# modelhkcat_cmv <- lm(catstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
+# summary(modelhkcat_cmv)
+# confint(modelhkcat_cmv)
+# #hkqol subsection
+# modelhkqolsub_nocmv <- lm(qolstand ~ anycmvr, data=qol0data)
+# summary(modelhkqolsub_nocmv)
+# confint(modelhkqolsub_nocmv)
+# modelhkqolsub_cmv <- lm(qolstand ~ factor(anycmvr, levels=c("1", "0")), data=qol0data)
+# summary(modelhkqolsub_cmv)
+# confint(modelhkqolsub_cmv)
+# 
+# # LONGITUDINAL?
+# addmargins(xtabs(data=cmvrdatalong, ~eq5score+redcap_week))
+# # So month 6 seems best...
+# 
+# # THIS NOT CORRECT YET; NEED TO EXCLUDE PEOPLE WHO SUBSEQUENTLY DEVELOPED CMVR; OR MAYBE HAVE THEM SWITCH GROUPS OR SOMETHING
+# 
+# 
+# 
+# qol_longitudinaltable <- qol_longitudinaldata %>%
+#   filter(redcap_week %in% c(0,24)) %>%
+#   group_by(baselinecmvr, redcap_week) %>%
+#   summarize(mean_eq5=mean(eq5score, na.rm=TRUE),
+#             count_eq5=sum(!is.na(eq5score)))
+# 
+# library(lme4)  
+# model_long_int <- lmer(eq5score ~ redcap_week*baselinecmvr + (1|studyid), data=filter(qol_longitudinaldata, redcap_week %in% c(0,24)))
+# summary(model_long_int)
+# # Interaction term not significant; this would indicate that rate of change is different between the two groups
+# # So just do a simple linear regression adjusting for baseline values
+# model_long24 <- lm(eq5score ~ baselinecmvr + baselineeq5, data=filter(qol_longitudinaldata, redcap_week==24))
+# summary(model_long24)
 
 
 
 ##  JK STOPPED HERE  ##
 
+
+
+#########################
+#########################
+###  BLAKE'S NEW CODE ###
+#########################
+#########################
+
+
+# Manuscript goals:
+
+# # 1. Number of pts on specific dates
+# # clarify: do you and JK want registration or ALL visits? 
+# # anyway here's how to get a dataset of all visits
+# n_pts_by_date <- cmvrdatalong %>%
+#   ungroup() %>% 
+#   select(studyid,exam_date) %>%
+#   count(exam_date)
+# # here's a quick visualization of it
+# n_pts_by_date %>% 
+#   ggplot(aes(x=exam_date,y=n))+
+#   geom_bar(stat="identity")
+# # and to get a csv
+# write_csv(n_pts_by_date,"CMVR-Cohort-Pts-by-date.csv")
+
+# 2. QOL w/ CMV vs w/o CMV at baseline
+# Independently 
+## Needs to be a factor rather than continuous
+## Need to limit to !is.na(anycmvr)
+
+###################
+##     EQD5     ###
+###################
+
+addmargins(xtabs(data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)), ~eq5score+cmvr.either))
+# CMV LATERALITY
+# JK: Let's just do Wald p-values to make it easier
+addmargins(xtabs(data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)), ~visit_laterality))
+# no missing data
+m.eq.wk0.cmv <- lm(eq5score ~ as.factor(visit_laterality), data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)))
+summary(m.eq.wk0.cmv)
+confint(m.eq.wk0.cmv)
+# CD4
+# Need to decide how to categorize. based on simply the R2 values, seems like linear is giving most info.
+# We can also plot
+ggplot(data=qoldata, aes(x=new_cd4_count100, y=eq5score)) + geom_point() + geom_smooth()
+addmargins(xtabs(data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)), ~new_cd4_count100))
+# 3 missing records
+# addmargins(xtabs(data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)), ~new_cd4_lt50))
+# addmargins(xtabs(data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)), ~new_cd4_lt100))
+m.eq.wk0.cd4 <- lm(eq5score ~ new_cd4_count100, data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)))
+# m.eq.wk0.cd4b <- lm(eq5score ~ new_cd4_lt50, data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)))
+# m.eq.wk0.cd4c <- lm(eq5score ~ new_cd4_lt100, data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)))
+summary(m.eq.wk0.cd4)
+# summary(m.eq.wk0.cd4b)
+# summary(m.eq.wk0.cd4c)
+confint(m.eq.wk0.cd4)
+# LOGMAR, BETTER-SEEING, PER 10 LINES
+ggplot(data=qoldata, aes(x=va.bettereye, y=eq5score)) + geom_point() + geom_smooth()
+addmargins(xtabs(data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)), ~va.bettereye.lines))
+# 1 missing record
+m.eq.wk0.logmar <- lm(eq5score ~ va.bettereye, data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)))
+summary(m.eq.wk0.logmar)
+confint(m.eq.wk0.logmar)
+# AGE, PER 10 YEARS
+ggplot(data=qoldata, aes(x=age, y=eq5score)) + geom_point() + geom_smooth()
+addmargins(xtabs(data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)), ~agedecade))
+# 1 missing record
+m.eq.wk0.age <- lm(eq5score ~ agedecade, data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)))
+summary(m.eq.wk0.age)
+confint(m.eq.wk0.age)
+# JK: multivariable
+madj.eq.wk0.cmv1 <- lm(eq5score ~ as.factor(visit_laterality) + new_cd4_count100 + va.bettereye + agedecade, data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)))
+madj.eq.wk0.cmv0 <- lm(eq5score ~                             + new_cd4_count100 + va.bettereye + agedecade, data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)))
+summary(madj.eq.wk0.cmv1)
+confint(madj.eq.wk0.cmv1)
+anova(madj.eq.wk0.cmv1,madj.eq.wk0.cmv0)
+
+# Why is QOL not different for uni vs bi? Not sure but intesting that CD4 of bilateral is higher than unilateral.
+# And EQ5D is health-related QOL not vision. Though in our analysis more associated with vision than CD4
+qoldata %>% filter(!is.na(cmvr.either) & redcap_week==0) %>% 
+  group_by(visit_laterality) %>% 
+  summarize(meaneq=mean(eq5score, na.rm=TRUE), totaleq=sum(!is.na(eq5score)), 
+            meancd4=mean(new_cd4_count, na.rm=TRUE), totalcd4=sum(!is.na(new_cd4_count)), 
+            meanva=mean(va.bettereye, na.rm=TRUE), totalva=sum(!is.na(va.bettereye)))
+
+# For hk
+# distancestand, nearstand, socialstand, catstand, qolstand
+addmargins(xtabs(data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)), ~totalhkstand+visit_laterality))
+m.hk.wk0.cmv1 <- lm(totalhkstand ~ as.factor(visit_laterality), data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)))
+m.hk.wk0.cmv0 <- lm(totalhkstand ~  1                         , data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)))
+summary(m.hk.wk0.cmv1) # cmvr ~> lower qol score
+confint(m.hk.wk0.cmv1)
+anova(m.hk.wk0.cmv1, m.hk.wk0.cmv0)
+# CD4 count
+addmargins(xtabs(data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)), ~new_cd4_count100))
+# Missing
+m.hk.wk0.cd4 <- lm(totalhkstand ~ new_cd4_count100, data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)))
+summary(m.hk.wk0.cd4) # cmvr ~> lower qol score
+confint(m.hk.wk0.cd4)
+# VISION, BETTER SEEING EYE
+addmargins(xtabs(data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)), ~va.bettereye))
+# Missing
+m.hk.wk0.logmar <- lm(totalhkstand ~ va.bettereye, data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)))
+summary(m.hk.wk0.logmar) # cmvr ~> lower qol score
+confint(m.hk.wk0.logmar)
+# AGE, PER 10 YEARS
+addmargins(xtabs(data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)), ~agedecade))
+m.hk.wk0.age <- lm(totalhkstand ~ agedecade, data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)))
+summary(m.hk.wk0.age) # cmvr ~> lower qol score
+confint(m.hk.wk0.age)
+# MULTIVARIABLE
+
+madj.hk.wk0.cmv1 <- lm(totalhkstand ~ as.factor(visit_laterality) + new_cd4_count100 + va.bettereye + agedecade, data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)))
+madj.hk.wk0.cmv0 <- lm(totalhkstand ~                               new_cd4_count100 + va.bettereye + agedecade, data=filter(qoldata, redcap_week==0 & !is.na(cmvr.either)))
+summary(madj.hk.wk0.cmv1) # cmvr ~> lower qol score
+confint(madj.hk.wk0.cmv1)
+nobs(madj.hk.wk0.cmv1)
+nobs(madj.hk.wk0.cmv0)
+anova(madj.hk.wk0.cmv1,madj.hk.wk0.cmv0)
+
+# 3. Controlling for CD4 count 
+# For eq5d
+model.eq5d.cd4ct   <- lm(eq5score ~ as.factor(anycmvr) + new_cd4_count, data=qol0data)
+model.eq5d.cd4ct.0 <- lm(eq5score ~           new_cd4_count, data=qol0data %>% filter(!is.na(anycmvr)))
+summary(model.eq5d.cd4ct) # cmvr ~> lower qol score
+confint(model.eq5d.cd4ct)
+anova(model.eq5d.cd4ct,model.eq5d.cd4ct.0) # LRT --> p=0.04118
+
+# For hk 
+model.hk.cd4ct   <- lm(totalhkstand ~ as.factor(anycmvr) + new_cd4_count, data=qol0data)
+model.hk.cd4ct.0 <- lm(totalhkstand ~           new_cd4_count, data=qol0data %>% filter(!is.na(anycmvr)))
+summary(model.hk.cd4ct) # cmvr ~> lower qol score
+confint(model.hk.cd4ct)
+anova(model.hk.cd4ct,model.hk.cd4ct.0) # LRT --> p<0.001
+
+# 4. Longitudinally 
+
+qol_longitudinaldata_eq5 <- cmvrdatalong %>%
+  filter(eye=="od_") %>%
+  group_by(studyid) %>%
+  mutate(baselinecmvr_work=if_else(visit_laterality>0 & redcap_week==0, 1, 0),
+         baselinecmvr=max(baselinecmvr_work, na.rm=TRUE),
+         baselineeq5_work=if_else(redcap_week==0, eq5score, NA_real_),
+         baselineeq5=max(baselineeq5_work, na.rm=TRUE))
+
+qol_longitudinaldata_hk <- hkqol_0 %>%
+  filter(eye=="od_") %>%
+  group_by(studyid) %>%
+  mutate(baselinecmvr_work=if_else(visit_laterality>0 & redcap_week==0, 1, 0),
+         baselinecmvr=max(baselinecmvr_work, na.rm=TRUE),
+         baselineeq5_work=if_else(redcap_week==0, totalhkstand, NA_real_),
+         baselineeq5=max(baselineeq5_work, na.rm=TRUE))
+
+qol_longitudinaltable_eq5 <- qol_longitudinaldata_eq5 %>%
+  filter(redcap_week %in% c(0,24)) %>%
+  group_by(baselinecmvr, redcap_week) %>%
+  summarize(mean_eq5=mean(eq5score, na.rm=TRUE),
+            count_eq5=sum(!is.na(eq5score)))
+
+qol_longitudinaltable_hk <- qol_longitudinaldata_hk %>%
+  filter(redcap_week %in% c(0,24)) %>%
+  group_by(baselinecmvr, redcap_week) %>%
+  summarize(mean_eq5=mean(totalhkstand, na.rm=TRUE),
+            count_eq5=sum(!is.na(totalhkstand)))
+
+View(qol_longitudinaltable_hk)
+View(qol_longitudinaltable_eq5)
+
+# do what you did above for eq5d, but for hk as well
+# also exclude the pts JK said to (those that developed cmvr)
+#      This shouldn't be too hard. Without a codebook, I'm not totally sure which variable is any cmv at baseline and which is 
+#      any cmv later on, but it would be as easy as filtering by "filter(a!=b)" in the dataset for analysis 
+
+# 5. Mortality 
+# JM - creating a dataset with the purpose of getting persontime/mortality 
+persontime <- cmvrdata %>% 
+  mutate(
+    new_cmv = case_when(
+      od_cmv==1 ~ 1,
+      os_cmv==1 ~ 1,
+      od_cmv>=2 ~ 0,
+      os_cmv>=2 ~ 0
+    ),
+    first_cmvr_date_working = if_else(new_cmv == 1, exam_date, as_date(NA)),
+    first_cmvr_date_patient = min(first_cmvr_date_working, na.rm = T)
+  ) %>% 
+  group_by(studyid) %>% 
+  summarize(
+    first=min(exam_date, na.rm=T), # first visit
+    last=max(exam_date, na.rm=T), # last visit
+    died=min(ltfu_how, na.rm=T) # did the pt die
+  ) %>%
+  mutate(
+    time_in_cmvfu_patient = as.integer(last) - as.integer(first), # total time in f/u
+    died=ifelse(died==1,1,0), # this just cleans the died data (sometimes na.rm creates infinities if all NA for an observation)
+    time_contribute_3m_censor=ifelse(time_in_cmvfu_patient>121,121,time_in_cmvfu_patient)
+    # ^this censors at 3m's (I saw in script you used 121 days?), so makes max person time a pt can contribute 121 days 
+  ) %>%
+  #bring in the baseline cmvr variable (this seemed the simplest way to pull in the study arm variable)
+  left_join(qol0data %>% select(studyid,anycmvr),by="studyid")
+
+# JM - mortality rate for entire cohort
+persontime %>% 
+  summarize(deaths=sum(died,na.rm=T),
+            persontime=sum(time_contribute_3m_censor,na.rm=T)) %>% 
+  mutate(mortalityrate=100*deaths/persontime) # result is deaths per 100 person-days; adjust as desired
+
+# JM - mortality rate by study arm (note all 5 deaths were in cmvr at baseline arm)
+# also you may have to adjust this to exclude pts who developed cmvr 
+persontime %>% 
+  group_by(anycmvr) %>% 
+  summarize(deaths=sum(died,na.rm=T),
+            persontime=sum(time_contribute_3m_censor,na.rm=T)) %>% 
+  mutate(mortalityrate=100*deaths/persontime) # result is deaths per 100 person-days; adjust as desired 
 
 
 
