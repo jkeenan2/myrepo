@@ -9,7 +9,7 @@ library(skimr)
 library(lubridate)
 
 
-costscreened_redcapexport <- read_csv("CostSCREENED_DATA_2020-04-23_1508.csv")
+costscreened_redcapexport <- read_csv("CostSCREENED_DATA_2020-04-29_0845.csv")
 glimpse(costscreened_redcapexport)
 # Check out different types of records
 xtabs(data=costscreened_redcapexport , ~redcap_event_name+clinic_attended_v2, addNA=TRUE) # I guess we only want screening visit
@@ -51,31 +51,30 @@ randomization_model <- read_csv("randomization_model_results.csv")
 # Where did this randomization_model_results.csv file come from? Is it from Redcap? 
 # You would have had to have merged it correct? I wonder if safer to just do it in the R code?
 # This is the original file, I believe. But we should export from Redcap
-# Random_10_percent_list_for_negatives_copy <- read_excel("Random 10 percent list for negatives copy.xlsx") %>%
-#   rename(refer_negative=number,
-#          referresultnegatives=refer) %>%
-#   select(refer_negative, referresultnegatives)
-# screeningdata2test <- left_join(screeningdata, Random_10_percent_list_for_negatives_copy, by=("refer_negative"))
-# xtabs(data=screeningdata2test, ~refer_positive+referresultnegatives, addNA=TRUE)
+
+randomization_model_jk <- read_csv("CostscreenedRandomizationCopiedFromRedcap.csv") %>%
+  separate(number_result, into=c("refer_negative", "randomization_model"), sep=", ") %>%
+  mutate(refer_negative=as.numeric(refer_negative))
+
+screeningdata3 <- right_join(randomization_model_jk, screeningdata, by="refer_negative")
+
 
 # BLAKE's ALTERNATIVE...
 randomization_model <- read_csv("randomization_model_results.csv")
 screeningdata2 <- full_join(randomization_model, screeningdata, by="study_id")
 glimpse(screeningdata2)
 
-# Comparing to the original randomization file
-# sd3 <- screeningdata2 %>%
+# Comparing Jeremy's and Blake's;they are the same. Will use Jeremy's.
+# sd2 <- screeningdata2 %>%
 #   select(study_id, randomization_model) %>%
 #   arrange(study_id)
-# sd3test <- screeningdata2test %>% 
-#   select(study_id, referresultnegatives) %>%
+# sd3 <- screeningdata3 %>%
+#   select(study_id, randomization_model) %>%
 #   arrange(study_id)
-# randomcompare <- full_join(sd3, sd3test, by="study_id") %>%
-#   mutate(identical=if_else(randomization_model==referresultnegatives,T,F))
+# randomcompare <- full_join(sd2, sd3, by="study_id") %>%
+#   mutate(identical=if_else(randomization_model.x==randomization_model.y,T,F))
 # View(randomcompare)
-# JK: how was this resolved? there are 3 differences: 1664396, 2718059, 3311923
-# Fine with me to just use randomization_model but I forget where that came from? From Redcap?
-# Import randomization model 
+
 
 
 ## BMS: iop (iop_left_eye_os, iop_right_eye_od) and travel_cost is wrongly labeled as a character 
@@ -97,12 +96,15 @@ skim(screeningdata2)
 ## At what stage do you remove these eyes from analysis? 
 #JK: do not remove. I don't think. 
 
-xtabs(data=screeningdata2, ~refer_positive+randomization_model, addNA=TRUE)
-
+xtabs(data=screeningdata3, ~refer_positive+randomization_model, addNA=TRUE)
+# 1, Refer Positive Screen ดูหน้าจอบวก
+# 2, Refer Randomization อ้างถึงการสุ่มตัวอย่าง
+# 3, Refer Can Not Determine อ้างอิงไม่สามารถกำหนด
+# 0, No referral ไม่มีการอ้างอิง
 
 # We essentially want only 2 main data frames: a wide one and long one.
 # I am only including the screeningdata and yingdata dataframes for now but we can add more before this point if needed
-csdatawide <- full_join(screeningdata2, yingdata, by="study_id") %>%
+csdatawide <- full_join(screeningdata3, yingdata, by="study_id") %>%
   # In order to reshape to long, get all variables in common format, with ".re" or ".le" at the end...
   rename(visual_symptoms.re=visual_symptoms_re,
          sx_blurry.re=symptoms_right___0,
@@ -423,13 +425,13 @@ patientscreenfails <- csdatalong %>%
             anyfail_completedophthoexam=sum(!is.na(oe_anyamd) & maxanyfail==1),
             nonefail_completedophthoexam=sum(!is.na(oe_anyamd) & maxanyfail==0 & randomization_model=="Refer", na.rm=TRUE))
 
-ts48.nonefail <- csdatalongreferralcheck %>% filter(!is.na(oe_anyamd) & maxanyfail==0 & randomization_model=="Refer") %>% select(starts_with("oe"))
-ts229.anyfail <- csdatalongreferralcheck %>% filter(!is.na(oe_anyamd) & maxanyfail==1) %>% select(starts_with("oe"))
+ts48.nonefail <- csdatalong %>% filter(!is.na(oe_anyamd) & maxanyfail==0 & randomization_model=="Refer") %>% select(starts_with("oe"))
+ts229.anyfail <- csdatalong %>% filter(!is.na(oe_anyamd) & maxanyfail==1) %>% select(starts_with("oe"))
 
-xtabs(data=csdatalongreferralcheck, ~accountedfor+shouldcompletegs, addNA=TRUE)
-xtabs(data=filter(csdatalongreferralcheck, shouldcompletegs==0 & accountedfor==1), ~study_id)
+xtabs(data=csdatalong, ~accountedfor+shouldcompletegs, addNA=TRUE)
+xtabs(data=filter(csdatalong, shouldcompletegs==0 & accountedfor==1), ~study_id)
 # JK: Why are there missing values for shouldcompletegs? (It's because randomization_model is missing; Blake to randomize these)
-xtabs(data=filter(csdatalongreferralcheck, is.na(shouldcompletegs)), ~study_id+randomization_model, addNA=TRUE)
+xtabs(data=filter(csdatalong, is.na(shouldcompletegs)), ~study_id+randomization_model, addNA=TRUE)
 # JK: 8 patients who didn't need a gold standard exam but got one. Agree with BMS to just ignore (ie not include in analysis)
 # gsts <- csdatalongreferralcheck %>% filter(is.na(shouldcompletegs)) %>% select(consent, maxanyfail, randomization_model, iop, oe_iop, starts_with("screenfail"))
 
