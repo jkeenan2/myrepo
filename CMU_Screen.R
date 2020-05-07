@@ -1,12 +1,13 @@
 library(readr)
 library(readxl)
-library(tidyverse)
-# library(rlang)
+library(rlang)
 library(skimr)
-# library(irr)
-# install.packages(lpSolve)
-# library(lpSolve)
 library(lubridate)
+library(survey)
+library(irr)
+library(lpSolve)
+library(lubridate)
+library(tidyverse)
 
 
 costscreened_redcapexport <- read_csv("CostSCREENED_DATA_2020-04-29_0845.csv")
@@ -47,10 +48,7 @@ screeningdata <- costscreened %>%
   select(-redcap_event_name)
 
 randomization_model <- read_csv("randomization_model_results.csv")
-# JK: I am not understanding why there is missing data. I wouldn't think there would be missing data. 
-# Where did this randomization_model_results.csv file come from? Is it from Redcap? 
-# You would have had to have merged it correct? I wonder if safer to just do it in the R code?
-# This is the original file, I believe. But we should export from Redcap
+
 
 randomization_model_jk <- read_csv("CostscreenedRandomizationCopiedFromRedcap.csv") %>%
   separate(number_result, into=c("refer_negative", "randomization_model"), sep=", ") %>%
@@ -64,16 +62,16 @@ randomization_model <- read_csv("randomization_model_results.csv")
 screeningdata2 <- full_join(randomization_model, screeningdata, by="study_id")
 glimpse(screeningdata2)
 
-# Comparing Jeremy's and Blake's;they are the same. Will use Jeremy's.
+#Comparing Jeremy's and Blake's;they are the same. Will use Jeremy's.
 # sd2 <- screeningdata2 %>%
-#   select(study_id, randomization_model) %>%
+#    select(study_id, randomization_model) %>%
 #   arrange(study_id)
 # sd3 <- screeningdata3 %>%
-#   select(study_id, randomization_model) %>%
+#    select(study_id, randomization_model) %>%
 #   arrange(study_id)
-# randomcompare <- full_join(sd2, sd3, by="study_id") %>%
-#   mutate(identical=if_else(randomization_model.x==randomization_model.y,T,F))
-# View(randomcompare)
+#  randomcompare <- full_join(sd2, sd3, by="study_id") %>%
+#    mutate(identical=if_else(randomization_model.x==randomization_model.y,T,F))
+#  View(randomcompare)
 
 
 
@@ -96,11 +94,14 @@ skim(screeningdata2)
 ## At what stage do you remove these eyes from analysis? 
 #JK: do not remove. I don't think. 
 
-xtabs(data=screeningdata3, ~refer_positive+randomization_model, addNA=TRUE)
+xtabs(data=screeningdata3, ~refer_positive+randomization_model_jk, addNA=TRUE)
 # 1, Refer Positive Screen ดูหน้าจอบวก
 # 2, Refer Randomization อ้างถึงการสุ่มตัวอย่าง
 # 3, Refer Can Not Determine อ้างอิงไม่สามารถกำหนด
 # 0, No referral ไม่มีการอ้างอิง
+
+## If I am not mistaken, this variable is just a radio button that Ying would select an answer 
+## I think better to use a calculation to avoid potential error.
 
 # We essentially want only 2 main data frames: a wide one and long one.
 # I am only including the screeningdata and yingdata dataframes for now but we can add more before this point if needed
@@ -302,9 +303,25 @@ csdatawide <- full_join(screeningdata3, yingdata, by="study_id") %>%
          pecendil_referral_other.le=other_ref_le_or_pecen_v2) %>%
   # Now put all the re/le variables at the end so can reshape to long
   select(study_id:examiner_v2, end_time_ying_screen:examiner, dilated:eyeart_screen_outcome, eyeart_flag:oe_examiner, oe_tx_none:vf_testing_complete, vf_further_tx:eyeart_screen_outcome_oephoto, eyeart_result_dilate_opexam_complete,time_start_exam_or_pecen, this_form_refer_calc_pecen:pecen_review_screening_complete, this_form_refer_calc_pecen_v2:pecen_review_dilated_complete, everything()) # to find duplicate column names: select(csdata)
+
 csdatawide.addresses <- csdatawide %>%
   select(study_id, address, current_address_provinc, current_address_amphoe,current_address_tambon)
 write_csv(csdatawide.addresses, "csdatawide.addresses.csv")
+
+csaddress <- read_csv("csdatawide.addresses_english.csv") 
+
+csaddress2 <- csaddress %>%
+  mutate(chiangmai.province=if_else(province_english == "Chiang Mai", 1, 0),
+         chiangmai.city=ifelse((province_english == "Chiang Mai" & district_english == "city"), 1, 0),
+         study_id=as.character(study_id))
+
+##BMS I am having trouble later in the demographic table calculation. 
+## I believe it is because missing addresses are being populated with NA
+##with my mutate function how do I make those zero for future calculations/ projects?
+
+csdatawide <- full_join(csdatawide, csaddress3, by="study_id") 
+
+skim(csdatawide)
 
 csdatalong <- csdatawide %>%
   gather(variable, value, visual_symptoms.re:pecendil_referral_other.le) %>%
@@ -370,6 +387,8 @@ csdatalong <- csdatawide %>%
   mutate(maxanyfail=max(screenfail_anycd), # So this is seeing whether the entire patient was referred, dichotomous 1/0
          maxvafail=max(screenfail_va),
          maxiopfail=max(screenfail_iop),
+         maxphotocdfail=max(screenfail_photoposcd),
+         maxphotofail=max(screenfail_photopos),
          maxabnldiscfail=max(screenfail_abnldisc),
          maxamdfail=max(screenfail_amd),
          maxdrfail=max(screenfail_dr),
@@ -386,12 +405,16 @@ csdatalong <- csdatawide %>%
          maxoeglc=max(oe_anyglcfalse),
          maxoeglcsuspect=max(oe_anyglcsuspect),
          maxoecataract=max(oe_tx_catsurgnotmiss),
+         maxoeamddrglc=if_else(maxoeglc==1 | maxoedr==1 | maxoeglcsuspect==1 | maxoeamd==1,1,0),
+         maxoeretina=max(oe_tx_rectxnotmiss),
+         maxoevftest=max(oe_tx_vftestnotmiss),
          maxoeiop=max(oe_iop, na.rm=TRUE),
          maxoeiop=if_else(maxoeiop==-Inf, NA_real_, maxoeiop),
          shouldcompletegs=ifelse((maxanyfail== 1 | randomization_model == "Refer"), 1, 0),
          accountedfor=ifelse((ophthalmologist_exam_complete ==2 | phone_call_complete==2), 1, 0))
 
 addmargins(xtabs(data=filter(csdatalong, consent==1), ~ screenfail_anycd + refer_patient_randomizatio, addNA=TRUE))
+
 
 # JK: I figured out why this wasn't working before.
 # IOP was a character variable, not numeric.
@@ -475,6 +498,7 @@ xtabs(data=filter(csdatalong, is.na(shouldcompletegs)), ~study_id+randomization_
 # Noticed that there were no "2"'s for other_referral so deleted screenfail_othercd variable above
 # Do you want to check the rest of the variables we made to make sure everything worked?
 
+##BMS Double-check 
 
 addmargins(xtabs(data=filter(csdatalongreferralcheck, consent==1), ~ maxanyfail + refer_patient_randomizatio, addNA=TRUE))
 #why is the above different then the below??? # because the above is based on person and the below is based on eye ie. some people had one positive eye and one negative eye
@@ -532,6 +556,7 @@ csdatawide %>%
   gather(field, value, consentyes_num:age_total) %>%
   separate(field, into=c("variable","stat"), sep="_") %>%
   spread(stat, value)
+
 #Table 2: demographics by clinic
 # JK: I think better that we use the original data to do this, and then in the code filter things as needed
 # Because when you create lots of different objects, it can get confusing to figure out when numbers don't match up
@@ -562,9 +587,20 @@ demographicstable <- csdatawide %>%
             female_num=sum(sex1==1),
             female_total=sum(!is.na(sex1)),
             female_per=female_num/female_total,
+            cm.province_num=sum(chiangmai.province == 1, na.rm=TRUE),
+            cm.province_total=sum(!is.na(chiangmai.province)),
+            cm.province_per=(cm.province_num/cm.province_total),
+            cm.city_num=sum(chiangmai.city == 1, na.rm=TRUE),
+            cm.city_total=sum(!is.na(chiangmai.city)),
+            cm.city_per=(cm.city_num/cm.city_total),
             dm_num=sum(diagnosis_of_diabetes==1),
             dm_total=sum(!is.na(diagnosis_of_diabetes)),
             dm_per=dm_num/dm_total)
+
+## BMS - Jeremy, this is what I was referring to when I was speaking about it not 
+## letting me make calculations later on with the chiangmai.province and city column variables
+## I was able to resolve the issue with adding ", na.rm=TRUE" to my script
+
 # JK: The following makes it easier to read, and could do write_csv and copy/paste in if you wanted.
 demographicstablelong <- demographicstable %>%
   gather(field, value, consentyes_num:dm_per) %>%
@@ -575,14 +611,18 @@ demographicstablelong <- demographicstable %>%
 # Note: missing duration of DM for one person in the General clinic:
 csdatawide %>% filter(diagnosis_of_diabetes==1 & is.na(years_with_diabetes)) %>% select(study_id)
 
-
 prostheses <- csdatalong %>%
   filter(grepl("prosthe",notes_for_flag) | grepl("prosthe",oe_majorcause_specother)) %>%
   select(study_id, eye,  va,iop, vcdr, dr, amd, notes_for_flag, oe_majorcause_specother, screenfail_anycd, screenfail_va, randomization_model)
 # JK: Not sure but the notes_for_flag seems to be an error since there is screening data for everything
 # So will only exclude 3867078 OS
+
 # Table 3
 # NEED TO INVESTIGATE THE MISSING VALUES!!
+## BMS - OK, added ts variables to the table below to investigate missing
+## There were no missing, I think you may be referring to my explanation below
+## If not, I can investigate further
+
 table3 <- csdatalong %>%
   filter(consent==1) %>%
   filter(!(study_id==3867078 & eye=="le")) %>%
@@ -590,24 +630,38 @@ table3 <- csdatalong %>%
   summarize(vafail_num=sum(screenfail_va==1, na.rm=TRUE),
             vafail_total=sum(!is.na(screenfail_va)),
             vafail_per=vafail_num/vafail_total,
+            vafail_ts=sum(is.na(screenfail_va)),
             iopfail_num=sum(screenfail_iop==1, na.rm=TRUE),
             iopfail_total=sum(!is.na(screenfail_iop)),
             iopfail_per=iopfail_num/iopfail_total,
+            iopfail_ts=sum(is.na(screenfail_iop)),
             abnldiscfail_num=sum(screenfail_abnldisc==1, na.rm=TRUE),
             abnldiscfail_total=sum(!is.na(screenfail_abnldisc)),
             abnldiscfail_per=abnldiscfail_num/abnldiscfail_total,
+            abnldiscfail_ts=sum(is.na(screenfail_abnldisc)),
             vcdrfail_num=sum(screenfail_vcdr==1, na.rm=TRUE),
             vcdrfail_total=sum(!is.na(screenfail_vcdr)),
             vcdrfail_per=vcdrfail_num/vcdrfail_total,
+            vcdrfail_ts=sum(is.na(screenfail_vcdr)),
             amdfail_num=sum(screenfail_amd==1, na.rm=TRUE),
             amdfail_total=sum(!is.na(screenfail_amd)),
             amdfail_per=amdfail_num/amdfail_total,
+            amdfail_ts=sum(is.na(screenfail_amd)),
             drfail_num=sum(screenfail_dr==1, na.rm=TRUE),
             drfail_total=sum(!is.na(screenfail_dr)),
             drfail_per=drfail_num/drfail_total,
+            drfail_ts=sum(is.na(screenfail_dr)),
+            otherfail_num=sum(screenfail_other==1, na.rm=TRUE),
+            otherfail_total=sum(!is.na(screenfail_other)),
+            otherfail_per=otherfail_num/otherfail_total,
+            otherfail_ts=sum(is.na(screenfail_other)),
             photofail_num=sum(screenfail_abnldisc==1 | screenfail_vcdr==1 | screenfail_amd==1 | screenfail_dr==1),
             photofail_total=sum(!is.na(screenfail_abnldisc) & !is.na(screenfail_vcdr) & !is.na(screenfail_amd) & !is.na(screenfail_dr)),
             photofail_per=photofail_num/photofail_total,
+            photofail_ts=sum(is.na(screenfail_abnldisc) | is.na(screenfail_vcdr) | is.na(screenfail_amd) & is.na(screenfail_dr)),
+            anyfailcd_num=sum(screenfail_anycd==1, na.rm=TRUE),
+            anyfailcd_total=sum(!is.na(screenfail_anycd)),
+            anyfailcd_per=anyfailcd_num/anyfailcd_total,           
             anyfail_num=sum(screenfail_any==1, na.rm=TRUE),
             anyfail_total=sum(!is.na(screenfail_any)),
             anyfail_per=anyfail_num/anyfail_total) %>%
@@ -616,6 +670,22 @@ table3 <- csdatalong %>%
   mutate(clinicstat=paste(clinic_attended_v2, stat, sep="_")) %>%
   select(-clinic_attended_v2, -stat) %>%
   spread(clinicstat, value)
+
+## I am unsure what missing values we are referring to here. I think maybe that photo
+## numbers did not allign with phioto referral total? Is that right?
+## Added "other.dx" to table as well 
+
+##? BMS Am I correct that we should not add if photo was "can not determine (CND)"
+## But report this seperatly somewhere as they were referred, but not considered positive
+## They were considered "CND" unless they had another positive screening test
+
+addmargins(xtabs(data=filter(csdatalong, consent==1), ~ screenfail_any + screenfail_anycd, addNA = TRUE))
+
+ts2cd <- csdatalong %>%
+  filter(screenfail_any ==0) %>%
+  filter(screenfail_anycd ==1)
+
+## 	2649924 - both eyes are CND , unsure what to do, I will reach out to Ying
 
 #Table 4 line by line
 addmargins(xtabs(data=filter(csdatalong, consent==1), ~ oe_anyamd + dmclinic, addNA = TRUE))
@@ -683,15 +753,32 @@ table4.patient <- csdatalong %>%
             oe_anydr.num=sum(maxoedr == 1),
             oe_anydr.denom=sum(!is.na(maxoedr)),
             oe_anydr.prop=oe_anydr.num/oe_anydr.denom,
-            oe_anyglcsus.num=sum(maxoeglcsuspect == 1),
+            oe_anyglcsus.num=sum(maxoeglcsuspect == 1, na.rm=TRUE),
             oe_anyglcsus.denom=sum(!is.na(maxoeglcsuspect)),
             oe_anyglcsus.prop=oe_anyglcsus.num/oe_anyglcsus.denom,
-            oe_anycataract.num=sum(maxoecataract == 1),
+            oe_anyglc.num=sum(maxoeglc == 1, na.rm=TRUE),
+            oe_anyglc.denom=sum(!is.na(maxoeglc)),
+            oe_anyglc.prop=oe_anyglc.num/oe_anyglc.denom,
+            oe_anyamddrglc.num=sum(maxoeamddrglc == 1, na.rm=TRUE),
+            oe_anyamddrglc.denom=sum(!is.na(maxoeamddrglc)),
+            oe_anyamddrglc.prop=oe_anyamddrglc.num/oe_anyamddrglc.denom,
+            oe_retref.num=sum(maxoeretina == 1, na.rm=TRUE),
+            oe_retref.denom=sum(!is.na(maxoeretina)),
+            oe_retref.prop=oe_retref.num/oe_retref.denom,
+            oe_vfref.num=sum(maxoevftest == 1, na.rm=TRUE),
+            oe_vfref.denom=sum(!is.na(maxoevftest)),
+            oe_vfref.prop=oe_vfref.num/oe_vfref.denom,
+            oe_anycataract.num=sum(maxoecataract == 1, na.rm=TRUE),
             oe_anycataract.denom=sum(!is.na(maxoecataract)),
             oe_anycataract.prop=oe_anycataract.num/oe_anycataract.denom)
 
 
+## For the patient level table, created some additional variables in csdata long to match eye level
+## I went above and created the variables necessary for pateint level in csdatalong
+
+
 addmargins(xtabs(data=csdatalong, ~screenfail_va+clinic_attended_v2, addNA=TRUE))
+
 t5.va.ppv.eye <- csdatalong %>%
   filter(consent==1 & screenfail_va==1 & !is.na(oe_iop)) %>%
   filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
@@ -700,15 +787,39 @@ t5.va.ppv.eye <- csdatalong %>%
   # group_by(clinic_attended_v2) %>%
   summarize(TOTALFAIL=sum(!is.na(screenfail_va)),
             TOTALEXAMINED=sum(!is.na(oe_iop)),
+            
             ppv_cataract_num=sum(oe_tx_catsurgnotmiss==1, na.rm=TRUE),
             ppv_cataract_total=sum(!is.na(oe_tx_catsurgnotmiss==1)),
             ppv_cataract_prop=ppv_cataract_num/ppv_cataract_total,
+            
             ppv_dr_num=sum(oe_anydr==1, na.rm=TRUE),
             ppv_dr_total=sum(!is.na(oe_anydr==1)),
             ppv_dr_prop=ppv_dr_num/ppv_dr_total,
+            
+            ppv_glcsus_num=sum(oe_anyglcsuspect==1, na.rm=TRUE),
+            ppv_glcsus_total=sum(!is.na(oe_anyglcsuspect==1)),
+            ppv_glcsus_prop=ppv_glcsus_num/ppv_glcsus_total,
+            
+            ppv_glc_num=sum(oe_anyglcfalse==1, na.rm=TRUE),
+            ppv_glc_total=sum(!is.na(oe_anyglcfalse==1)),
+            ppv_glc_prop=ppv_glc_num/ppv_glc_total,
+            
+            ppv_retref_num=sum(oe_tx_rectxnotmiss==1, na.rm=TRUE),
+            ppv_retref_total=sum(!is.na(oe_tx_rectxnotmiss==1)),
+            ppv_retref_prop=ppv_retref_num/ppv_retref_total,
+            
+            ppv_vfref_num=sum(oe_tx_vftestnotmiss==1, na.rm=TRUE),
+            ppv_vfref_total=sum(!is.na(oe_tx_vftestnotmiss==1)),
+            ppv_vfref_prop=ppv_vfref_num/ppv_vfref_total,
+            
+            ppv_amddrglc_num=sum(oe_anyamddrglc==1, na.rm=TRUE),
+            ppv_amddrglc_total=sum(!is.na(oe_anyamddrglc==1)),
+            ppv_amddrglc_prop=ppv_amddrglc_num/ppv_amddrglc_total,
+          
             ppv_amd_num=sum(oe_anyamd==1, na.rm=TRUE),
             ppv_amd_total=sum(!is.na(oe_anyamd==1)),
             ppv_amd_prop=ppv_amd_num/ppv_amd_total)
+
 t5.va.npv.eye <- csdatalong %>%
   filter(consent==1 & screenfail_va==0 & !is.na(oe_iop)) %>%
   filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
@@ -717,15 +828,205 @@ t5.va.npv.eye <- csdatalong %>%
   # group_by(clinic_attended_v2) %>%
   summarize(TOTALNOTFAIL=sum(!is.na(screenfail_va)),
             TOTALEXAMINED=sum(!is.na(oe_iop)),
+           
             npv_cataract_num=sum(oe_tx_catsurgnotmiss==0, na.rm=TRUE),
             npv_cataract_total=sum(!is.na(oe_tx_catsurgnotmiss==0)),
             npv_cataract_prop=npv_cataract_num/npv_cataract_total,
+            
             npv_dr_num=sum(oe_anydr==0, na.rm=TRUE),
             npv_dr_total=sum(!is.na(oe_anydr==0)),
             npv_dr_prop=npv_dr_num/npv_dr_total,
+            
+            npv_glcsus_num=sum(oe_anyglcsuspect==0, na.rm=TRUE),
+            npv_glcsus_total=sum(!is.na(oe_anyglcsuspect==0)),
+            npv_glcsus_prop=npv_glcsus_num/npv_glcsus_total,
+            
+            npv_glc_num=sum(oe_anyglcfalse==0, na.rm=TRUE),
+            npv_glc_total=sum(!is.na(oe_anyglcfalse==0)),
+            npv_glc_prop=npv_glc_num/npv_glc_total,
+            
+            npv_retref_num=sum(oe_tx_rectxnotmiss==0, na.rm=TRUE),
+            npv_retref_total=sum(!is.na(oe_tx_rectxnotmiss==0)),
+            npv_retref_prop=npv_retref_num/npv_retref_total,
+            
+            npv_vfref_num=sum(oe_tx_vftestnotmiss==0, na.rm=TRUE),
+            npv_vfref_total=sum(!is.na(oe_tx_vftestnotmiss==0)),
+            npv_vfref_prop=npv_vfref_num/npv_vfref_total,
+            
+            npv_amddrglc_num=sum(oe_anyamddrglc==0, na.rm=TRUE),
+            npv_amddrglc_total=sum(!is.na(oe_anyamddrglc==0)),
+            npv_amddrglc_prop=npv_amddrglc_num/npv_amddrglc_total,
+            
             npv_amd_num=sum(oe_anyamd==0, na.rm=TRUE),
             npv_amd_total=sum(!is.na(oe_anyamd==0)),
             npv_amd_prop=npv_amd_num/npv_amd_total)
+
+
+t5.iop.ppv.eye <- csdatalong %>%
+  filter(consent==1 & screenfail_iop==1 & !is.na(oe_iop)) %>%
+  filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  ungroup() %>%
+  # group_by(clinic_attended_v2) %>%
+  summarize(TOTALFAIL=sum(!is.na(screenfail_va)),
+            TOTALEXAMINED=sum(!is.na(oe_iop)),
+            
+            ppv_cataract_num=sum(oe_tx_catsurgnotmiss==1, na.rm=TRUE),
+            ppv_cataract_total=sum(!is.na(oe_tx_catsurgnotmiss==1)),
+            ppv_cataract_prop=ppv_cataract_num/ppv_cataract_total,
+            
+            ppv_dr_num=sum(oe_anydr==1, na.rm=TRUE),
+            ppv_dr_total=sum(!is.na(oe_anydr==1)),
+            ppv_dr_prop=ppv_dr_num/ppv_dr_total,
+            
+            ppv_glcsus_num=sum(oe_anyglcsuspect==1, na.rm=TRUE),
+            ppv_glcsus_total=sum(!is.na(oe_anyglcsuspect==1)),
+            ppv_glcsus_prop=ppv_glcsus_num/ppv_glcsus_total,
+            
+            ppv_glc_num=sum(oe_anyglcfalse==1, na.rm=TRUE),
+            ppv_glc_total=sum(!is.na(oe_anyglcfalse==1)),
+            ppv_glc_prop=ppv_glc_num/ppv_glc_total,
+            
+            ppv_retref_num=sum(oe_tx_rectxnotmiss==1, na.rm=TRUE),
+            ppv_retref_total=sum(!is.na(oe_tx_rectxnotmiss==1)),
+            ppv_retref_prop=ppv_retref_num/ppv_retref_total,
+            
+            ppv_vfref_num=sum(oe_tx_vftestnotmiss==1, na.rm=TRUE),
+            ppv_vfref_total=sum(!is.na(oe_tx_vftestnotmiss==1)),
+            ppv_vfref_prop=ppv_vfref_num/ppv_vfref_total,
+            
+            ppv_amddrglc_num=sum(oe_anyamddrglc==1, na.rm=TRUE),
+            ppv_amddrglc_total=sum(!is.na(oe_anyamddrglc==1)),
+            ppv_amddrglc_prop=ppv_amddrglc_num/ppv_amddrglc_total,
+            
+            ppv_amd_num=sum(oe_anyamd==1, na.rm=TRUE),
+            ppv_amd_total=sum(!is.na(oe_anyamd==1)),
+            ppv_amd_prop=ppv_amd_num/ppv_amd_total)
+
+t5.iop.npv.eye <- csdatalong %>%
+  filter(consent==1 & screenfail_iop==0 & !is.na(oe_iop)) %>%
+  filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  ungroup() %>%
+  # group_by(clinic_attended_v2) %>%
+  summarize(TOTALNOTFAIL=sum(!is.na(screenfail_va)),
+            TOTALEXAMINED=sum(!is.na(oe_iop)),
+            
+            npv_cataract_num=sum(oe_tx_catsurgnotmiss==0, na.rm=TRUE),
+            npv_cataract_total=sum(!is.na(oe_tx_catsurgnotmiss==0)),
+            npv_cataract_prop=npv_cataract_num/npv_cataract_total,
+            
+            npv_dr_num=sum(oe_anydr==0, na.rm=TRUE),
+            npv_dr_total=sum(!is.na(oe_anydr==0)),
+            npv_dr_prop=npv_dr_num/npv_dr_total,
+            
+            npv_glcsus_num=sum(oe_anyglcsuspect==0, na.rm=TRUE),
+            npv_glcsus_total=sum(!is.na(oe_anyglcsuspect==0)),
+            npv_glcsus_prop=npv_glcsus_num/npv_glcsus_total,
+            
+            npv_glc_num=sum(oe_anyglcfalse==0, na.rm=TRUE),
+            npv_glc_total=sum(!is.na(oe_anyglcfalse==0)),
+            npv_glc_prop=npv_glc_num/npv_glc_total,
+            
+            npv_retref_num=sum(oe_tx_rectxnotmiss==0, na.rm=TRUE),
+            npv_retref_total=sum(!is.na(oe_tx_rectxnotmiss==0)),
+            npv_retref_prop=npv_retref_num/npv_retref_total,
+            
+            npv_vfref_num=sum(oe_tx_vftestnotmiss==0, na.rm=TRUE),
+            npv_vfref_total=sum(!is.na(oe_tx_vftestnotmiss==0)),
+            npv_vfref_prop=npv_vfref_num/npv_vfref_total,
+            
+            npv_amddrglc_num=sum(oe_anyamddrglc==0, na.rm=TRUE),
+            npv_amddrglc_total=sum(!is.na(oe_anyamddrglc==0)),
+            npv_amddrglc_prop=npv_amddrglc_num/npv_amddrglc_total,
+            
+            npv_amd_num=sum(oe_anyamd==0, na.rm=TRUE),
+            npv_amd_total=sum(!is.na(oe_anyamd==0)),
+            npv_amd_prop=npv_amd_num/npv_amd_total)
+
+
+t5.photo.ppv.eye <- csdatalong %>%
+  filter(consent==1 & screenfail_photoposcd==1 & !is.na(oe_iop)) %>%
+  filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  ungroup() %>%
+  # group_by(clinic_attended_v2) %>%
+  summarize(TOTALFAIL=sum(!is.na(screenfail_va)),
+            TOTALEXAMINED=sum(!is.na(oe_iop)),
+            
+            ppv_cataract_num=sum(oe_tx_catsurgnotmiss==1, na.rm=TRUE),
+            ppv_cataract_total=sum(!is.na(oe_tx_catsurgnotmiss==1)),
+            ppv_cataract_prop=ppv_cataract_num/ppv_cataract_total,
+            
+            ppv_dr_num=sum(oe_anydr==1, na.rm=TRUE),
+            ppv_dr_total=sum(!is.na(oe_anydr==1)),
+            ppv_dr_prop=ppv_dr_num/ppv_dr_total,
+            
+            ppv_glcsus_num=sum(oe_anyglcsuspect==1, na.rm=TRUE),
+            ppv_glcsus_total=sum(!is.na(oe_anyglcsuspect==1)),
+            ppv_glcsus_prop=ppv_glcsus_num/ppv_glcsus_total,
+            
+            ppv_glc_num=sum(oe_anyglcfalse==1, na.rm=TRUE),
+            ppv_glc_total=sum(!is.na(oe_anyglcfalse==1)),
+            ppv_glc_prop=ppv_glc_num/ppv_glc_total,
+            
+            ppv_retref_num=sum(oe_tx_rectxnotmiss==1, na.rm=TRUE),
+            ppv_retref_total=sum(!is.na(oe_tx_rectxnotmiss==1)),
+            ppv_retref_prop=ppv_retref_num/ppv_retref_total,
+            
+            ppv_vfref_num=sum(oe_tx_vftestnotmiss==1, na.rm=TRUE),
+            ppv_vfref_total=sum(!is.na(oe_tx_vftestnotmiss==1)),
+            ppv_vfref_prop=ppv_vfref_num/ppv_vfref_total,
+            
+            ppv_amddrglc_num=sum(oe_anyamddrglc==1, na.rm=TRUE),
+            ppv_amddrglc_total=sum(!is.na(oe_anyamddrglc==1)),
+            ppv_amddrglc_prop=ppv_amddrglc_num/ppv_amddrglc_total,
+            
+            ppv_amd_num=sum(oe_anyamd==1, na.rm=TRUE),
+            ppv_amd_total=sum(!is.na(oe_anyamd==1)),
+            ppv_amd_prop=ppv_amd_num/ppv_amd_total)
+
+t5.photo.npv.eye <- csdatalong %>%
+  filter(consent==1 & screenfail_photoposcd==0 & !is.na(oe_iop)) %>%
+  filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  ungroup() %>%
+  # group_by(clinic_attended_v2) %>%
+  summarize(TOTALNOTFAIL=sum(!is.na(screenfail_va)),
+            TOTALEXAMINED=sum(!is.na(oe_iop)),
+            
+            npv_cataract_num=sum(oe_tx_catsurgnotmiss==0, na.rm=TRUE),
+            npv_cataract_total=sum(!is.na(oe_tx_catsurgnotmiss==0)),
+            npv_cataract_prop=npv_cataract_num/npv_cataract_total,
+            
+            npv_dr_num=sum(oe_anydr==0, na.rm=TRUE),
+            npv_dr_total=sum(!is.na(oe_anydr==0)),
+            npv_dr_prop=npv_dr_num/npv_dr_total,
+            
+            npv_glcsus_num=sum(oe_anyglcsuspect==0, na.rm=TRUE),
+            npv_glcsus_total=sum(!is.na(oe_anyglcsuspect==0)),
+            npv_glcsus_prop=npv_glcsus_num/npv_glcsus_total,
+            
+            npv_glc_num=sum(oe_anyglcfalse==0, na.rm=TRUE),
+            npv_glc_total=sum(!is.na(oe_anyglcfalse==0)),
+            npv_glc_prop=npv_glc_num/npv_glc_total,
+            
+            npv_retref_num=sum(oe_tx_rectxnotmiss==0, na.rm=TRUE),
+            npv_retref_total=sum(!is.na(oe_tx_rectxnotmiss==0)),
+            npv_retref_prop=npv_retref_num/npv_retref_total,
+            
+            npv_vfref_num=sum(oe_tx_vftestnotmiss==0, na.rm=TRUE),
+            npv_vfref_total=sum(!is.na(oe_tx_vftestnotmiss==0)),
+            npv_vfref_prop=npv_vfref_num/npv_vfref_total,
+            
+            npv_amddrglc_num=sum(oe_anyamddrglc==0, na.rm=TRUE),
+            npv_amddrglc_total=sum(!is.na(oe_anyamddrglc==0)),
+            npv_amddrglc_prop=npv_amddrglc_num/npv_amddrglc_total,
+            
+            npv_amd_num=sum(oe_anyamd==0, na.rm=TRUE),
+            npv_amd_total=sum(!is.na(oe_anyamd==0)),
+            npv_amd_prop=npv_amd_num/npv_amd_total)
+
 
 # PATIENT LEVEL
 # OK I think that the survey design weights would be 1/229 for the anyfail group and 1/660 for the nonefailed group.
@@ -773,7 +1074,7 @@ dr.yes.surv.anyfail <- svydesign(id=~1,strata=~maxanyfail, weights=~pw, data=fil
 (sens.anyfail.dr.svy <- svyglm(maxanyfail ~ 1, dr.yes.surv.anyfail))
 # It's a lower estimate with the sampling weights. Only 71% compared with 96% if no weights. That seems about right. 
 
-t5.va.ppv.pt <- csdatalong %>%
+t5.va.ppv.pt.jk <- csdatalong %>%
   filter(maxvafail==1) %>%
   ungroup() %>%
   # group_by(clinic_attended_v2) %>%
@@ -786,22 +1087,520 @@ t5.va.ppv.pt <- csdatalong %>%
             ppv_amd_num=sum(maxoeamd==1, na.rm=TRUE),
             ppv_amd_total=sum(!is.na(maxoeamd==1)),
             ppv_amd_prop=ppv_amd_num/ppv_amd_total)
-t5.va.npv.pt <- csdatalong %>%
+
+### BMS - I am getting something very different here. I am getting 196 for cases...
+### I think there were some lines missing, took a stab at it myself, below:
+
+##VA
+
+t5.va.ppv.pt <- csdatalong %>%
+  filter(maxanyfail==1 | (maxanyfail==1 & randomization_model %in% "Refer")) %>%
+  filter(consent==1 & eye=="re" & !is.na(maxoeiop)) %>%
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  filter(maxvafail==1) %>%
+  group_by(maxanyfail) %>%
+  # group_by(clinic_attended_v2) %>%
+  summarize(ppv_cataract_num=sum(maxoecataract==1, na.rm=TRUE),
+            ppv_cataract_total=sum(!is.na(maxoecataract)),
+            ppv_cataract_prop=ppv_cataract_num/ppv_cataract_total,
+            
+            ppv_dr_num=sum(maxoedr==1, na.rm=TRUE),
+            ppv_dr_total=sum(!is.na(maxoedr)),
+            ppv_dr_prop=ppv_dr_num/ppv_dr_total,
+            
+            ppv_glcsus_num=sum(maxoeglcsuspect==1, na.rm=TRUE),
+            ppv_glcsus_total=sum(!is.na(maxoeglcsuspect==1)),
+            ppv_glcsus_prop=ppv_glcsus_num/ppv_glcsus_total,
+            
+            ppv_glc_num=sum(maxoeglc==1, na.rm=TRUE),
+            ppv_glc_total=sum(!is.na(maxoeglc==1)),
+            ppv_glc_prop=ppv_glc_num/ppv_glc_total,
+            
+            ppv_retref_num=sum(maxoeretina==1, na.rm=TRUE),
+            ppv_retref_total=sum(!is.na(maxoeretina==1)),
+            ppv_retref_prop=ppv_retref_num/ppv_retref_total,
+            
+            ppv_vfref_num=sum(maxoevftest==1, na.rm=TRUE),
+            ppv_vfref_total=sum(!is.na(maxoevftest==1)),
+            ppv_vfref_prop=ppv_vfref_num/ppv_vfref_total,
+            
+            ppv_amddrglc_num=sum(maxoeamddrglc==1, na.rm=TRUE),
+            ppv_amddrglc_total=sum(!is.na(maxoeamddrglc==1)),
+            ppv_amddrglc_prop=ppv_amddrglc_num/ppv_amddrglc_total,
+            
+            ppv_amd_num=sum(maxoeamd==1, na.rm=TRUE),
+            ppv_amd_total=sum(!is.na(maxoeamd)),
+            ppv_amd_prop=ppv_amd_num/ppv_amd_total)
+
+
+t5.va.npv.pt<- csdatalong %>%
   filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
   filter(consent==1 & eye=="re" & !is.na(maxoeiop)) %>%
   filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
   filter(maxvafail==0) %>%
   group_by(maxanyfail) %>%
   # group_by(clinic_attended_v2) %>%
-  summarize(ppv_cataract_num=sum(maxoecataract==0, na.rm=TRUE),
+  summarize(npv_cataract_num=sum(maxoecataract==0, na.rm=TRUE),
+            npv_cataract_total=sum(!is.na(maxoecataract)),
+            npv_cataract_prop=npv_cataract_num/npv_cataract_total,
+            npv_dr_num=sum(maxoedr==0, na.rm=TRUE),
+            npv_dr_total=sum(!is.na(maxoedr)),
+            npv_dr_prop=npv_dr_num/npv_dr_total,
+            
+            npv_glcsus_num=sum(maxoeglcsuspect==0, na.rm=TRUE),
+            npv_glcsus_total=sum(!is.na(maxoeglcsuspect==0)),
+            npv_glcsus_prop=npv_glcsus_num/npv_glcsus_total,
+            
+            npv_glc_num=sum(maxoeglc==0, na.rm=TRUE),
+            npv_glc_total=sum(!is.na(maxoeglc==0)),
+            npv_glc_prop=npv_glc_num/npv_glc_total,
+            
+            npv_retref_num=sum(maxoeretina==0, na.rm=TRUE),
+            npv_retref_total=sum(!is.na(maxoeretina==0)),
+            npv_retref_prop=npv_retref_num/npv_retref_total,
+            
+            npv_vfref_num=sum(maxoevftest==0, na.rm=TRUE),
+            npv_vfref_total=sum(!is.na(maxoevftest==0)),
+            npv_vfref_prop=npv_vfref_num/npv_vfref_total,
+            
+            npv_amddrglc_num=sum(maxoeamddrglc==0, na.rm=TRUE),
+            npv_amddrglc_total=sum(!is.na(maxoeamddrglc==0)),
+            npv_amddrglc_prop=npv_amddrglc_num/npv_amddrglc_total,
+            
+            npv_amd_num=sum(maxoeamd==0, na.rm=TRUE),
+            npv_amd_total=sum(!is.na(maxoeamd)),
+            npv_amd_prop=npv_amd_num/npv_amd_total)
+
+##IOP
+
+t5.iop.ppv.pt <- csdatalong %>%
+  filter(maxanyfail==1 | (maxanyfail==1 & randomization_model %in% "Refer")) %>%
+  filter(consent==1 & eye=="re" & !is.na(maxoeiop)) %>%
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  filter(maxiopfail==1) %>%
+  group_by(maxanyfail) %>%
+  # group_by(clinic_attended_v2) %>%
+  summarize(ppv_cataract_num=sum(maxoecataract==1, na.rm=TRUE),
             ppv_cataract_total=sum(!is.na(maxoecataract)),
             ppv_cataract_prop=ppv_cataract_num/ppv_cataract_total,
-            ppv_dr_num=sum(maxoedr==0, na.rm=TRUE),
+            
+            ppv_dr_num=sum(maxoedr==1, na.rm=TRUE),
             ppv_dr_total=sum(!is.na(maxoedr)),
             ppv_dr_prop=ppv_dr_num/ppv_dr_total,
-            ppv_amd_num=sum(maxoeamd==0, na.rm=TRUE),
+            
+            ppv_glcsus_num=sum(maxoeglcsuspect==1, na.rm=TRUE),
+            ppv_glcsus_total=sum(!is.na(maxoeglcsuspect==1)),
+            ppv_glcsus_prop=ppv_glcsus_num/ppv_glcsus_total,
+            
+            ppv_glc_num=sum(maxoeglc==1, na.rm=TRUE),
+            ppv_glc_total=sum(!is.na(maxoeglc==1)),
+            ppv_glc_prop=ppv_glc_num/ppv_glc_total,
+            
+            ppv_retref_num=sum(maxoeretina==1, na.rm=TRUE),
+            ppv_retref_total=sum(!is.na(maxoeretina==1)),
+            ppv_retref_prop=ppv_retref_num/ppv_retref_total,
+            
+            ppv_vfref_num=sum(maxoevftest==1, na.rm=TRUE),
+            ppv_vfref_total=sum(!is.na(maxoevftest==1)),
+            ppv_vfref_prop=ppv_vfref_num/ppv_vfref_total,
+            
+            ppv_amddrglc_num=sum(maxoeamddrglc==1, na.rm=TRUE),
+            ppv_amddrglc_total=sum(!is.na(maxoeamddrglc==1)),
+            ppv_amddrglc_prop=ppv_amddrglc_num/ppv_amddrglc_total,
+            
+            ppv_amd_num=sum(maxoeamd==1, na.rm=TRUE),
             ppv_amd_total=sum(!is.na(maxoeamd)),
             ppv_amd_prop=ppv_amd_num/ppv_amd_total)
+
+
+t5.iop.npv.pt <- csdatalong %>%
+  filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
+  filter(consent==1 & eye=="re" & !is.na(maxoeiop)) %>%
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  filter(maxiopfail==0) %>%
+  group_by(maxanyfail) %>%
+  # group_by(clinic_attended_v2) %>%
+  summarize(npv_cataract_num=sum(maxoecataract==0, na.rm=TRUE),
+            npv_cataract_total=sum(!is.na(maxoecataract)),
+            npv_cataract_prop=npv_cataract_num/npv_cataract_total,
+            npv_dr_num=sum(maxoedr==0, na.rm=TRUE),
+            npv_dr_total=sum(!is.na(maxoedr)),
+            npv_dr_prop=npv_dr_num/npv_dr_total,
+            
+            npv_glcsus_num=sum(maxoeglcsuspect==0, na.rm=TRUE),
+            npv_glcsus_total=sum(!is.na(maxoeglcsuspect==0)),
+            npv_glcsus_prop=npv_glcsus_num/npv_glcsus_total,
+            
+            npv_glc_num=sum(maxoeglc==0, na.rm=TRUE),
+            npv_glc_total=sum(!is.na(maxoeglc==0)),
+            npv_glc_prop=npv_glc_num/npv_glc_total,
+            
+            npv_retref_num=sum(maxoeretina==0, na.rm=TRUE),
+            npv_retref_total=sum(!is.na(maxoeretina==0)),
+            npv_retref_prop=npv_retref_num/npv_retref_total,
+            
+            npv_vfref_num=sum(maxoevftest==0, na.rm=TRUE),
+            npv_vfref_total=sum(!is.na(maxoevftest==0)),
+            npv_vfref_prop=npv_vfref_num/npv_vfref_total,
+            
+            npv_amddrglc_num=sum(maxoeamddrglc==0, na.rm=TRUE),
+            npv_amddrglc_total=sum(!is.na(maxoeamddrglc==0)),
+            npv_amddrglc_prop=npv_amddrglc_num/npv_amddrglc_total,
+            
+            npv_amd_num=sum(maxoeamd==0, na.rm=TRUE),
+            npv_amd_total=sum(!is.na(maxoeamd)),
+            npv_amd_prop=npv_amd_num/npv_amd_total)
+
+
+## Photo patient level (CD)
+
+#created maxphotocdfail in csdatalong. Also created a non-CD version that I wanted to investigate further
+
+t5.photoCD.ppv.pt <- csdatalong %>%
+  filter(maxanyfail==1 | (maxanyfail==1 & randomization_model %in% "Refer")) %>%
+  filter(consent==1 & eye=="re" & !is.na(maxoeiop)) %>%
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  filter(maxphotocdfail==1) %>%
+  group_by(maxanyfail) %>%
+  # group_by(clinic_attended_v2) %>%
+  summarize(ppv_cataract_num=sum(maxoecataract==1, na.rm=TRUE),
+            ppv_cataract_total=sum(!is.na(maxoecataract)),
+            ppv_cataract_prop=ppv_cataract_num/ppv_cataract_total,
+            
+            ppv_dr_num=sum(maxoedr==1, na.rm=TRUE),
+            ppv_dr_total=sum(!is.na(maxoedr)),
+            ppv_dr_prop=ppv_dr_num/ppv_dr_total,
+            
+            ppv_glcsus_num=sum(maxoeglcsuspect==1, na.rm=TRUE),
+            ppv_glcsus_total=sum(!is.na(maxoeglcsuspect==1)),
+            ppv_glcsus_prop=ppv_glcsus_num/ppv_glcsus_total,
+            
+            ppv_glc_num=sum(maxoeglc==1, na.rm=TRUE),
+            ppv_glc_total=sum(!is.na(maxoeglc==1)),
+            ppv_glc_prop=ppv_glc_num/ppv_glc_total,
+            
+            ppv_retref_num=sum(maxoeretina==1, na.rm=TRUE),
+            ppv_retref_total=sum(!is.na(maxoeretina==1)),
+            ppv_retref_prop=ppv_retref_num/ppv_retref_total,
+            
+            ppv_vfref_num=sum(maxoevftest==1, na.rm=TRUE),
+            ppv_vfref_total=sum(!is.na(maxoevftest==1)),
+            ppv_vfref_prop=ppv_vfref_num/ppv_vfref_total,
+            
+            ppv_amddrglc_num=sum(maxoeamddrglc==1, na.rm=TRUE),
+            ppv_amddrglc_total=sum(!is.na(maxoeamddrglc==1)),
+            ppv_amddrglc_prop=ppv_amddrglc_num/ppv_amddrglc_total,
+            
+            ppv_amd_num=sum(maxoeamd==1, na.rm=TRUE),
+            ppv_amd_total=sum(!is.na(maxoeamd)),
+            ppv_amd_prop=ppv_amd_num/ppv_amd_total)
+
+
+t5.photoCD.npv.pt <- csdatalong %>%
+  filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
+  filter(consent==1 & eye=="re" & !is.na(maxoeiop)) %>%
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  filter(maxphotocdfail==0) %>%
+  group_by(maxanyfail) %>%
+  # group_by(clinic_attended_v2) %>%
+  summarize(npv_cataract_num=sum(maxoecataract==0, na.rm=TRUE),
+            npv_cataract_total=sum(!is.na(maxoecataract)),
+            npv_cataract_prop=npv_cataract_num/npv_cataract_total,
+            npv_dr_num=sum(maxoedr==0, na.rm=TRUE),
+            npv_dr_total=sum(!is.na(maxoedr)),
+            npv_dr_prop=npv_dr_num/npv_dr_total,
+            
+            npv_glcsus_num=sum(maxoeglcsuspect==0, na.rm=TRUE),
+            npv_glcsus_total=sum(!is.na(maxoeglcsuspect==0)),
+            npv_glcsus_prop=npv_glcsus_num/npv_glcsus_total,
+            
+            npv_glc_num=sum(maxoeglc==0, na.rm=TRUE),
+            npv_glc_total=sum(!is.na(maxoeglc==0)),
+            npv_glc_prop=npv_glc_num/npv_glc_total,
+            
+            npv_retref_num=sum(maxoeretina==0, na.rm=TRUE),
+            npv_retref_total=sum(!is.na(maxoeretina==0)),
+            npv_retref_prop=npv_retref_num/npv_retref_total,
+            
+            npv_vfref_num=sum(maxoevftest==0, na.rm=TRUE),
+            npv_vfref_total=sum(!is.na(maxoevftest==0)),
+            npv_vfref_prop=npv_vfref_num/npv_vfref_total,
+            
+            npv_amddrglc_num=sum(maxoeamddrglc==0, na.rm=TRUE),
+            npv_amddrglc_total=sum(!is.na(maxoeamddrglc==0)),
+            npv_amddrglc_prop=npv_amddrglc_num/npv_amddrglc_total,
+            
+            npv_amd_num=sum(maxoeamd==0, na.rm=TRUE),
+            npv_amd_total=sum(!is.na(maxoeamd)),
+            npv_amd_prop=npv_amd_num/npv_amd_total)
+
+## Photo NOT including CD patients
+
+t5.photo.ppv.pt <- csdatalong %>%
+  filter(maxanyfail==1 | (maxanyfail==1 & randomization_model %in% "Refer")) %>%
+  filter(consent==1 & eye=="re" & !is.na(maxoeiop)) %>%
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  filter(maxphotofail==1) %>%
+  group_by(maxanyfail) %>%
+  # group_by(clinic_attended_v2) %>%
+  summarize(ppv_cataract_num=sum(maxoecataract==1, na.rm=TRUE),
+            ppv_cataract_total=sum(!is.na(maxoecataract)),
+            ppv_cataract_prop=ppv_cataract_num/ppv_cataract_total,
+            
+            ppv_dr_num=sum(maxoedr==1, na.rm=TRUE),
+            ppv_dr_total=sum(!is.na(maxoedr)),
+            ppv_dr_prop=ppv_dr_num/ppv_dr_total,
+            
+            ppv_glcsus_num=sum(maxoeglcsuspect==1, na.rm=TRUE),
+            ppv_glcsus_total=sum(!is.na(maxoeglcsuspect==1)),
+            ppv_glcsus_prop=ppv_glcsus_num/ppv_glcsus_total,
+            
+            ppv_glc_num=sum(maxoeglc==1, na.rm=TRUE),
+            ppv_glc_total=sum(!is.na(maxoeglc==1)),
+            ppv_glc_prop=ppv_glc_num/ppv_glc_total,
+            
+            ppv_retref_num=sum(maxoeretina==1, na.rm=TRUE),
+            ppv_retref_total=sum(!is.na(maxoeretina==1)),
+            ppv_retref_prop=ppv_retref_num/ppv_retref_total,
+            
+            ppv_vfref_num=sum(maxoevftest==1, na.rm=TRUE),
+            ppv_vfref_total=sum(!is.na(maxoevftest==1)),
+            ppv_vfref_prop=ppv_vfref_num/ppv_vfref_total,
+            
+            ppv_amddrglc_num=sum(maxoeamddrglc==1, na.rm=TRUE),
+            ppv_amddrglc_total=sum(!is.na(maxoeamddrglc==1)),
+            ppv_amddrglc_prop=ppv_amddrglc_num/ppv_amddrglc_total,
+            
+            ppv_amd_num=sum(maxoeamd==1, na.rm=TRUE),
+            ppv_amd_total=sum(!is.na(maxoeamd)),
+            ppv_amd_prop=ppv_amd_num/ppv_amd_total)
+
+
+t5.photo.npv.pt <- csdatalong %>%
+  filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
+  filter(consent==1 & eye=="re" & !is.na(maxoeiop)) %>%
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  filter(maxphotofail==0) %>%
+  group_by(maxanyfail) %>%
+  # group_by(clinic_attended_v2) %>%
+  summarize(npv_cataract_num=sum(maxoecataract==0, na.rm=TRUE),
+            npv_cataract_total=sum(!is.na(maxoecataract)),
+            npv_cataract_prop=npv_cataract_num/npv_cataract_total,
+            npv_dr_num=sum(maxoedr==0, na.rm=TRUE),
+            npv_dr_total=sum(!is.na(maxoedr)),
+            npv_dr_prop=npv_dr_num/npv_dr_total,
+            
+            npv_glcsus_num=sum(maxoeglcsuspect==0, na.rm=TRUE),
+            npv_glcsus_total=sum(!is.na(maxoeglcsuspect==0)),
+            npv_glcsus_prop=npv_glcsus_num/npv_glcsus_total,
+            
+            npv_glc_num=sum(maxoeglc==0, na.rm=TRUE),
+            npv_glc_total=sum(!is.na(maxoeglc==0)),
+            npv_glc_prop=npv_glc_num/npv_glc_total,
+            
+            npv_retref_num=sum(maxoeretina==0, na.rm=TRUE),
+            npv_retref_total=sum(!is.na(maxoeretina==0)),
+            npv_retref_prop=npv_retref_num/npv_retref_total,
+            
+            npv_vfref_num=sum(maxoevftest==0, na.rm=TRUE),
+            npv_vfref_total=sum(!is.na(maxoevftest==0)),
+            npv_vfref_prop=npv_vfref_num/npv_vfref_total,
+            
+            npv_amddrglc_num=sum(maxoeamddrglc==0, na.rm=TRUE),
+            npv_amddrglc_total=sum(!is.na(maxoeamddrglc==0)),
+            npv_amddrglc_prop=npv_amddrglc_num/npv_amddrglc_total,
+            
+            npv_amd_num=sum(maxoeamd==0, na.rm=TRUE),
+            npv_amd_total=sum(!is.na(maxoeamd)),
+            npv_amd_prop=npv_amd_num/npv_amd_total)
+
+## Very similar values for CD and not CD. I think that this is likely worth mentioning.
+## You would maybe not lose much if you didn't refer these patients and would be less 
+## people requiring additional screening (in a real world setting)
+
+## for DR npv goes down in non-CD version - need to trouble shoot. Should not go this
+## direction because CD should be all positives plus more. Definitions must be wrong somewhere
+
+## JM Table 5 & 6:
+# https://stats.stackexchange.com/questions/7513/how-to-use-weights-in-function-lm-in-r
+
+# x <-c(rnorm(10),NA)
+# df <- data.frame(y= 10x+rnorm, x=x, wght1=1:10)
+
+
+## BMS: Or would we use the below?
+# ## Fancy weights as numeric vector
+# summary(lm(y~x,data=df,weights=(df$wght1)^(3/4))) 
+# 
+# # Fancy weights as formula on column of the data set
+# summary(lm(y~x,data=df,weights=I(wght1^(3/4))))
+# 
+# # Mundane weights as the column of the data set
+# summary(lm(y~x,data=df,weights=wght1))
+# JM - Can you define what formula you would want to use weights in? 
+# I guess I'm just unclear on what model you are running that needs weights? 
+
+## JM - working on Tables 5/6 ##
+
+# JM - ok first I would just filter out negatives that weren't referred and modify the randomization_model var
+csdatalong56 <- csdatalong %>% 
+  filter(randomization_model!="Do not refer"|is.na(randomization_model)) %>% #count(randomization_model)
+  mutate(arm=ifelse(is.na(randomization_model),"ScreenPos","ScreenNegRefer")) %>% #count(randomization_model,arm)
+  # then I guess weight by group
+  mutate(weight=case_when(
+    arm=="ScreenPos" ~ 1,
+    arm=="ScreenNegRefer" ~ 10
+  )) #%>% count(arm,weight)
+
+# JM - then here's a function I wrote to get the PPV/NPV/Sensitivity/Specificity for each 
+# screening test and exam combination. I used the weighting above to make the Screening-Negative-Referrals
+# weigh in more in the calculations. see my annotations 
+
+getPPVetc <- function(df,screen,exam){
+  df %>% 
+    # this first part just gets the number of pts in each category but for each pt who was a negative 
+    # screen referral counts as 10 pts instead of 1 (that's how we get n_weighted)
+    mutate(screening = !! sym(screen),
+           examtest = !! sym(exam)) %>%
+    count(screening,examtest,weight) %>%
+    filter(!is.na(screening) & !is.na(examtest)) %>%
+    mutate(screening = factor(screening),
+           examtest = factor(examtest)) %>%
+    mutate(n_weighted=weight*n) %>%
+    group_by(screening,examtest,.drop=F) %>%
+    summarize(n_total=sum(n_weighted)) %>%
+    arrange(desc(screening),desc(examtest)) %>%
+    # this next line just assigns a/b/c/d aka 
+    # (a) true positives, (b) false positives, (c) false negatives, (d) true negatives
+    bind_cols(data.frame(a=c("a","b","c","d"))) %>%
+    # then we can get point estimates for PPV/NPV/SENS/SPEC
+    ungroup() %>% select(a,n_total) %>% spread(a,n_total) %>%
+    summarize(PPV=100*a/(a+b),
+              NPV=100*d/(d+c),
+              SENS=100*a/(a+c),
+              SPEC=100*d/(d+b)) %>%
+    mutate(screen=screen,exam=exam)
+}
+
+# JM - Now here I run this function to get the PPV/NPV/Sens/Spec for most of the cells in 
+# Tables 5 and 6. Sorry, I wasn't sure which variables correspond to retina referral, 
+# cataract, or glaucoma referral for the exams. And I wasn't sure which variable to use
+# for Photo (pass/fail). You can try adapating the script to add those in 
+
+# Note: Here I only have point estimates. I'm not familiar with how to calculate confidence intervals 
+# that account for clustering of eyes by person when calculating these (although I make an attempt at
+# doing this below (see lines 1090-->)
+# Also, let me know if this weighting method is anything like you and Jeremy discussed previously.
+# This was just me taking a shot at it 
+
+table56output <- bind_rows( #point estimates only
+  # VA screening test
+  csdatalong56 %>% getPPVetc("screenfail_va","oe_anyglcsuspect"),
+  csdatalong56 %>% getPPVetc("screenfail_va","oe_anyglc"),
+  csdatalong56 %>% getPPVetc("screenfail_va","oe_anyamd"),
+  csdatalong56 %>% getPPVetc("screenfail_va","oe_anydr"),
+  # IOP screening test
+  csdatalong56 %>% getPPVetc("screenfail_iop","oe_anyglcsuspect"),
+  csdatalong56 %>% getPPVetc("screenfail_iop","oe_anyglc"),
+  csdatalong56 %>% getPPVetc("screenfail_iop","oe_anyamd"), #!! note that there were no true positives 
+  csdatalong56 %>% getPPVetc("screenfail_iop","oe_anydr")
+)
+
+# Just the point estimates (see line 1094 onward for how I get confidence intervals)
+table5pointestimates <- table56output %>% 
+  select(-SENS,-SPEC) %>% 
+  pivot_wider(names_from = screen,values_from = c(PPV,NPV))
+
+table6pointestimates <- table56output %>% 
+  select(-PPV,-NPV) %>% 
+  pivot_wider(names_from = screen,values_from = c(SENS,SPEC))
+
+# JM - my method for getting CIs
+# Note: This method is similar to Jeremy's but I approached some of the code a bit different. 
+# I'm pretty certain this will give the same output but I need to check with Jeremy. If you 
+# find my code confusing, we can work with Jeremy with his method.
+
+library(rsample)
+library(purrr)
+
+# This creates a nested data frame, where all data with same study id get put on the same line
+# So if we resample, we will automatically resample all data from the same person
+csdatalong56_forBS <- csdatalong56 %>% select(study_id,weight,screenfail_va,screenfail_iop,oe_anyglcsuspect,oe_anyglc,oe_anyamd,oe_anydr)
+bsdata <- csdatalong56_forBS %>% nest(-study_id)
+#head(bsdata)
+
+set.seed(154234)
+# The bs object is the boostrap object; we are creating separate populations with resampling
+# You could alter the "times" option; usually use small number of replications as testing code because faster
+# But then change to a larger number (9999?) for the final analysis
+bs <- bootstraps(bsdata, times = 99)
+bs
+
+# JM - I wrote this function to get confidence intervals from across the resampled populations 
+getbootCIs <- function(screen,exam){
+  map(bs$splits,~as.tibble(.) %>% unnest() %>%
+        getPPVetc(screen,exam)
+  ) %>% 
+    bind_rows(.id='boots') %>% 
+    group_by(screen,exam) %>% 
+    summarize(
+      PPV.LB = quantile(PPV,0.025), PPV.UB = quantile(PPV,0.975),
+      NPV.LB = quantile(NPV,0.025), NPV.UB = quantile(NPV,0.975),
+      SENS.LB = quantile(SENS,0.025), SENS.UB = quantile(SENS,0.975),
+      SPEC.LB = quantile(SPEC,0.025), SPEC.UB = quantile(SPEC,0.975),
+    )
+}
+
+# this is an example of what you need to do for each screening test x exam test combination
+# the step below this one will do it for all combos 
+getbootCIs("screenfail_va","oe_anyglcsuspect")
+
+# note this step can take awhile (about 30 second on my computer)
+# remember you'll have to add in more variables-- I just did it for a few as examples 
+table56outputCIs <- bind_rows( #confidence intervals
+  # VA screening test
+  getbootCIs("screenfail_va","oe_anyglcsuspect"),
+  getbootCIs("screenfail_va","oe_anyglc"),
+  getbootCIs("screenfail_va","oe_anyamd"),
+  getbootCIs("screenfail_va","oe_anydr"),
+  # IOP screening test
+  getbootCIs("screenfail_iop","oe_anyglcsuspect"),
+  getbootCIs("screenfail_iop","oe_anyglc"),
+  getbootCIs("screenfail_iop","oe_anyamd"), #!! note that there were no true positives 
+  getbootCIs("screenfail_iop","oe_anydr")
+)
+
+table56output #remember this is the dataset of point estimates 
+
+# we want to combine the point estimates with the BS CIs 
+table56output_combined <- inner_join(table56output,table56outputCIs,by=c("screen","exam")) %>%
+  select(screen,exam,
+         PPV,PPV.LB,PPV.UB,NPV,NPV.LB,NPV.UB,
+         SENS,SENS.LB,SENS.UB,SPEC,SPEC.LB,SPEC.UB)
+
+# partial table 5
+table5 <- table56output_combined %>% 
+  transmute(screen,exam,
+            PPV=paste0(round(PPV,1),"% (",round(PPV.LB,1),"-",round(PPV.UB,1),"%)"),
+            NPV=paste0(round(NPV,1),"% (",round(NPV.LB,1),"-",round(NPV.UB,1),"%)")) %>%
+  pivot_wider(names_from = screen,values_from = c(PPV,NPV))
+table5
+
+# partial table 6
+table6 <- table56output_combined %>% 
+  transmute(screen,exam,
+            SENS=paste0(round(SENS,1),"% (",round(SENS.LB,1),"-",round(SENS.UB,1),"%)"),
+            SPEC=paste0(round(SPEC,1),"% (",round(SPEC.LB,1),"-",round(SPEC.UB,1),"%)")) %>%
+  pivot_wider(names_from = screen,values_from = c(SENS,SPEC))
+table6
+
+## JM code for bootstrap confidence intervals for tables 5 and 6 ENDS here ##
+
+
+
+### Past data cleaning
+
+
 
 ts <- csdatalong %>%
   filter(consent==1  & !is.na(maxoeiop)) %>%
@@ -886,6 +1685,5 @@ amdexploredata <- csdatalong %>%
   mutate(oe_amdsum=oe_amd_cd+oe_amd_drusen+oe_amd_ga+oe_amd_wet)
 xtabs(data=amdexploredata, ~oe_amdsum+oe_amd_none, addNA=TRUE)
 xtabs(data=filter(amdexploredata, oe_amdsum>1 | (oe_amdsum>=1 & oe_amd_none==1)), ~study_id+eye, addNA=TRUE)
-
 
 
