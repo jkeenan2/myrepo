@@ -8,13 +8,26 @@ library(skimr)
 # library(lpSolve)
 library(lubridate)
 
-
+csaddress <- read_csv("csdatawide.addresses_english.csv")
 costscreened_redcapexport <- read_csv("CostSCREENED_DATA_2020-04-29_0845.csv")
 glimpse(costscreened_redcapexport)
 # Check out different types of records
 xtabs(data=costscreened_redcapexport , ~redcap_event_name+clinic_attended_v2, addNA=TRUE) # I guess we only want screening visit
 # Who to include? Consented? At clinic?
 xtabs(data=costscreened_redcapexport, ~clinic_attended_v2+consent, addNA=TRUE)
+
+# Addresses
+# Blake did this but his file does not have a leading zero for the ones that start with zero.
+# So we can add a leading zero to anything with less than 7 characters -- see str_pad b elow.
+csaddress2 <- csaddress %>%
+  mutate(chiangmai.province=if_else(province_english == "Chiang Mai", 1, 0),
+         chiangmai.city=if_else((province_english == "Chiang Mai" & district_english == "city"), 1, 0),
+         study_id=as.character(study_id),
+         study_id=str_pad(as.character(study_id), 7, pad = "0")) %>%
+  select(study_id, chiangmai.province, chiangmai.city)
+# csdatawide_blake <- full_join(csdatawide, csaddress2, by="study_id") %>%
+#   select(study_id, clinic_attended_v2, chiangmai.province, chiangmai.city)
+# addmargins(xtabs(data=filter(csdatawide_blake, is.na(chiangmai.province) | is.na(chiangmai.city)), ~study_id+chiangmai.city, addNA=TRUE))
 
 
 costscreened <- costscreened_redcapexport %>%
@@ -101,6 +114,9 @@ xtabs(data=screeningdata3, ~refer_positive+randomization_model, addNA=TRUE)
 # 2, Refer Randomization อ้างถึงการสุ่มตัวอย่าง
 # 3, Refer Can Not Determine อ้างอิงไม่สามารถกำหนด
 # 0, No referral ไม่มีการอ้างอิง
+# Blake says: If I am not mistaken, this variable (refer_positive) is just a radio button that Ying would select an answer 
+# I think better to use a calculation to avoid potential error.
+# JK: confirmed, we never use this again, I think I was just doing some data checks with it
 
 # We essentially want only 2 main data frames: a wide one and long one.
 # I am only including the screeningdata and yingdata dataframes for now but we can add more before this point if needed
@@ -301,10 +317,12 @@ csdatawide <- full_join(screeningdata3, yingdata, by="study_id") %>%
          pecendil_referral_amd.le=referral_amd_le_or_pecen_v2,
          pecendil_referral_other.le=other_ref_le_or_pecen_v2) %>%
   # Now put all the re/le variables at the end so can reshape to long
-  select(study_id:examiner_v2, end_time_ying_screen:examiner, dilated:eyeart_screen_outcome, eyeart_flag:oe_examiner, oe_tx_none:vf_testing_complete, vf_further_tx:eyeart_screen_outcome_oephoto, eyeart_result_dilate_opexam_complete,time_start_exam_or_pecen, this_form_refer_calc_pecen:pecen_review_screening_complete, this_form_refer_calc_pecen_v2:pecen_review_dilated_complete, everything()) # to find duplicate column names: select(csdata)
-csdatawide.addresses <- csdatawide %>%
-  select(study_id, address, current_address_provinc, current_address_amphoe,current_address_tambon)
-write_csv(csdatawide.addresses, "csdatawide.addresses.csv")
+  select(study_id:examiner_v2, end_time_ying_screen:examiner, dilated:eyeart_screen_outcome, eyeart_flag:oe_examiner, oe_tx_none:vf_testing_complete, vf_further_tx:eyeart_screen_outcome_oephoto, eyeart_result_dilate_opexam_complete,time_start_exam_or_pecen, this_form_refer_calc_pecen:pecen_review_screening_complete, this_form_refer_calc_pecen_v2:pecen_review_dilated_complete, everything()) %>% # to find duplicate column names: select(csdata)
+  left_join(., csaddress2, by="study_id")
+# TO GET CSV SO WE CAN TRANSLATE THE ADDRESSES
+# csdatawide.addresses <- csdatawide %>%
+#   select(study_id, address, current_address_provinc, current_address_amphoe,current_address_tambon)
+# write_csv(csdatawide.addresses, "csdatawide.addresses.csv")
 
 csdatalong <- csdatawide %>%
   gather(variable, value, visual_symptoms.re:pecendil_referral_other.le) %>%
@@ -338,14 +356,23 @@ csdatalong <- csdatawide %>%
                                 if_else(amd==1,1,0)), # xtabs(data=csdatalong, ~amd+screenfail_amd, addNA=TRUE)
          screenfail_amdcd=if_else(is.na(amd), NA_real_, 
                                   if_else(amd %in% c(1,2),1,0)), # xtabs(data=csdatalong, ~amd+screenfail_amdcd, addNA=TRUE)
+         screenfail_amdcdonly=if_else(is.na(amd), NA_real_, if_else(amd %in% c(2),1,0)),
+         screenfail_drcdonly=if_else(is.na(dr), NA_real_, if_else(dr %in% c(2),1,0)),
+         screenfail_vcdrcdonly=if_else(is.na(vcdr), 1, 0),
+         screenfail_photo_abdisccdonly=if_else(is.na(photo_abdisc), NA_real_, if_else(photo_abdisc %in% c(2),1,0)),
+         screenfail_photocdonly=if_else(screenfail_amdcdonly==1 & screenfail_drcdonly==1 & screenfail_vcdrcdonly==1 & screenfail_photo_abdisccdonly==1,1,0),
+         screenfail_photocdany=if_else(screenfail_amdcdonly==1 | screenfail_drcdonly==1 | screenfail_vcdrcdonly==1 | screenfail_photo_abdisccdonly==1,1,0),
          screenfail_other=if_else(is.na(other_referral), NA_real_, 
-                               if_else(other_referral==1,1,0)),
-         screenfail_photopos=if_else(is.na(amd) & is.na(dr) & is.na(vcdr) & is.na(photo_abdisc) & is.na(other_referral), NA_real_, 
-                                     if_else( (screenfail_amd==1 | screenfail_vcdr==1 | screenfail_dr==1 | other_referral==1 | photo_abdisc==1),1,0)),
-         screenfail_photoposcd=if_else(is.na(amd) & is.na(dr) & is.na(vcdr) & is.na(photo_abdisc) & is.na(other_referral), NA_real_, 
-                                     if_else( (screenfail_amdcd==1 | screenfail_vcdrcd==1 | screenfail_drcd==1 | screenfail_abnldisccd==1),1,0)),
-         screenfail_any=if_else(screenfail_va==1 | screenfail_iop==1 | screenfail_abnldisc==1 | screenfail_vcdr==1 | screenfail_dr==1 | screenfail_amd==1 | screenfail_photopos==1 | screenfail_other==1 , 1, 0),
-         screenfail_anycd=if_else(screenfail_va==1 | screenfail_iop==1 | screenfail_abnldisccd==1 | screenfail_vcdr==1 |  screenfail_dr==1 | screenfail_amd==1 | screenfail_other==1 | screenfail_amdcd==1 | screenfail_drcd==1 | screenfail_photopos==1 | screenfail_vcdrcd==1 |screenfail_abnldisccd ==1 | screenfail_photoposcd==1, 1, 0),
+                          if_else(other_referral==1 & screenfail_amdcd==0 & screenfail_drcd==0 & screenfail_abnldisccd==0 & screenfail_vcdrcd==0,1,0)),
+         screenfail_photopos=if_else(is.na(amd) & is.na(dr) & is.na(vcdr) & is.na(photo_abdisc & is.na(screenfail_other)), NA_real_, 
+                             if_else( (screenfail_amd==1 | screenfail_dr==1 | screenfail_vcdr==1 | screenfail_abnldisc==1 | screenfail_other==1),1,0)),
+         screenfail_photoposcd=if_else(is.na(amd) & is.na(dr) & is.na(vcdr) & is.na(photo_abdisc) & is.na(screenfail_other), NA_real_, 
+                               if_else( (screenfail_amdcd==1 | screenfail_drcd==1 | screenfail_vcdrcd==1 | screenfail_abnldisccd==1 | screenfail_other==1),1,0)),
+         # JK: These screenfail_any are old; leaving them here but I changed it a little. I think screenfail_other might have been checked when poor quality photos?
+         # screenfail_any=if_else(screenfail_va==1 | screenfail_iop==1 | screenfail_abnldisc==1 | screenfail_vcdr==1 | screenfail_dr==1 | screenfail_amd==1 | screenfail_photopos==1 | screenfail_other==1 , 1, 0),
+         # screenfail_anycd=if_else(screenfail_va==1 | screenfail_iop==1 | screenfail_abnldisccd==1 | screenfail_vcdr==1 |  screenfail_dr==1 | screenfail_amd==1 | screenfail_other==1 | screenfail_amdcd==1 | screenfail_drcd==1 | screenfail_photopos==1 | screenfail_vcdrcd==1 |screenfail_abnldisccd ==1 | screenfail_photoposcd==1, 1, 0),
+         screenfail_any=  if_else(screenfail_va==1 | screenfail_iop==1 | screenfail_abnldisc==1   | screenfail_vcdr==1   | screenfail_dr==1   | screenfail_amd==1, 1, 0),
+         screenfail_anycd=if_else(screenfail_va==1 | screenfail_iop==1 | screenfail_abnldisccd==1 | screenfail_vcdrcd==1 | screenfail_drcd==1 | screenfail_amdcd==1 | screenfail_other==1, 1, 0),
          # xtabs(data=csdatalong, ~amd+screenfail_any, addNA=TRUE)
          oe_anyamd=if_else(oe_amd_missing==1, NA_real_, 
                    if_else(oe_amd_drusen==1 | oe_amd_ga==1 | oe_amd_wet==1, 1, 0)), # xtabs(data=csdatalong, ~oe_anyamd+oe_amd_cd, addNA=TRUE)  # xtabs(data=csdatalong, ~oe_anyamd+oe_amd_drusen, addNA=TRUE)  # xtabs(data=csdatalong, ~oe_anyamd+oe_amd_ga, addNA=TRUE)  # xtabs(data=csdatalong, ~oe_anyamd+oe_amd_wet, addNA=TRUE)
@@ -354,10 +381,14 @@ csdatalong <- csdatawide %>%
          oe_anyglcfalse=if_else(is.na(oe_iop), NA_real_, 
                    if_else(oe_glaucomadx %in% c(1),1,0)),
          oe_anyglc=if_else(oe_tx_missing %in% 0,oe_anyglcfalse,0),
-         oe_anyglcsuspect=if_else(is.na(oe_vcdr) & is.na(oe_iop), NA_real_, 
-                          if_else((!is.na(oe_vcdr) & oe_vcdr>0.6) | oe_iop>22,1,0)), # xtabs(data=filter(csdatalong, is.na(oe_anyglcsuspect) & oe_anyglcfalse==0), ~study_id)
-         oe_anyamddrglc=if_else(is.na(oe_anyamd) & is.na(oe_anydr) & is.na(oe_anydr),NA_real_,
+         oe_anyglcsuspect=if_else(is.na(oe_vcdr) & is.na(oe_iop) & is.na(oe_discheme) & is.na(oe_discnotch) & is.na(oe_rnfldefect), NA_real_, 
+                                  if_else((!is.na(oe_vcdr) & oe_vcdr>0.6) | oe_iop>21 | oe_discheme %in% 1 | oe_discnotch %in% 1 | oe_rnfldefect %in% 1 ,1,0)), # xtabs(data=filter(csdatalong, is.na(oe_anyglcsuspect) & oe_anyglcfalse==0), ~study_id)
+         oe_anyglcsuspectglc=if_else(is.na(oe_anyglc) & is.na(oe_anyglcsuspect),NA_real_,
+                                     if_else(oe_anyglc==1 | oe_anyglcsuspect==1,1,0)),
+         oe_anyamddrglc=if_else(is.na(oe_anyamd) & is.na(oe_anydr) & is.na(oe_anyglc),NA_real_,
                         if_else(oe_anyamd==1 | oe_anydr==1 | oe_anyglc==1,1,0)),
+         oe_anyamddrglcsuspglc=if_else(is.na(oe_anyamd) & is.na(oe_anydr) & is.na(oe_anyglc) & is.na(oe_anyglcsuspect),NA_real_,
+                                if_else(oe_anyamd==1 | oe_anydr==1 | oe_anyglc==1 | oe_anyglcsuspect==1,1,0)),
          oe_tx_catsurgnotmiss =if_else(oe_tx_missing==1, NA_real_, 
                                if_else(oe_tx_catsurg==1, 1, 0)),
          oe_tx_vftestnotmiss =if_else(oe_tx_missing==1, NA_real_, 
@@ -365,15 +396,25 @@ csdatalong <- csdatawide %>%
          oe_tx_rectxnotmiss =if_else(oe_tx_missing==1, NA_real_, 
                                if_else(oe_tx_rectx==1, 1, 0)),
          sumoedx=oe_anyamd+oe_anydr+oe_anyglc+oe_anyglcsuspect+oe_anyamddrglc+oe_tx_catsurgnotmiss+oe_tx_vftestnotmiss+oe_tx_rectxnotmiss,
-         clinic_attended_v2=recode_factor(clinic_attended_v2, '0'="Diabetes", '1'="Thyroid",'2'="General")) %>%
+         clinic_attended_v2=recode_factor(clinic_attended_v2, '0'="Diabetes", '1'="Thyroid",'2'="General"),
+         eyeexamined=if_else(!is.na(oe_iop), 1,0)) %>%
   group_by(study_id) %>% 
-  mutate(maxanyfail=max(screenfail_anycd), # So this is seeing whether the entire patient was referred, dichotomous 1/0
+  mutate(maxanyfailcd=max(screenfail_anycd), # So this is seeing whether the entire patient was referred, dichotomous 1/0
          maxvafail=max(screenfail_va),
          maxiopfail=max(screenfail_iop),
+         maxphotocdfail=max(screenfail_photoposcd),
+         maxphotofail=max(screenfail_photopos),
+         maxphotocdany=max(screenfail_photocdany),
+         maxabnldisccdfail=max(screenfail_abnldisccd),
+         maxamdcdfail=max(screenfail_amdcd),
+         maxdrcdfail=max(screenfail_drcd),
+         maxvcdrcdfail=max(screenfail_vcdrcd),
+         
          maxabnldiscfail=max(screenfail_abnldisc),
          maxamdfail=max(screenfail_amd),
          maxdrfail=max(screenfail_dr),
          maxvcdrfail=max(screenfail_vcdr),
+         
          maxsxblurry=max(sx_blurry),
          maxsxfloater=max(sx_floater),
          maxsxflash=max(sx_flash),
@@ -383,12 +424,25 @@ csdatalong <- csdatawide %>%
          maxsxvisualsymptoms=max(visual_symptoms),
          maxoeamd=max(oe_anyamd),
          maxoedr=max(oe_anydr),
-         maxoeglc=max(oe_anyglcfalse),
-         maxoeglcsuspect=max(oe_anyglcsuspect),
+         maxoeglc=max(oe_anyglcfalse, na.rm = TRUE),
+         maxoeglcsuspect=max(oe_anyglcsuspect, na.rm = TRUE),
+         maxoeglcsuspectorglc=case_when(maxoeglc==1 | maxoeglcsuspect==1 ~ 1,
+                                        maxoeglc==0 & maxoeglcsuspect==0 ~ 0,
+                                        TRUE ~ NA_real_),
          maxoecataract=max(oe_tx_catsurgnotmiss),
+         maxoecataractlens=max(oe_lens_cataract),
+         maxoeamddrglc=case_when(maxoeglc==1 | maxoeglcsuspect==1 | maxoedr==1 | maxoeamd==1 ~ 1,
+                                 maxoeglc==0 & maxoeglcsuspect==0 & maxoedr==0 & maxoeamd==0 ~ 0,
+                                 TRUE ~ NA_real_),
+         maxoeamddrglccat=case_when(maxoeglc==1 | maxoeglcsuspect==1 | maxoedr==1 | maxoeamd==1  | maxoecataract==1 ~ 1,
+                                    maxoeglc==0 & maxoeglcsuspect==0 & maxoedr==0 & maxoeamd==0  & maxoecataract==0 ~ 0,
+                                    TRUE ~ NA_real_),
+         maxoeretina=max(oe_tx_rectxnotmiss),
+         maxoevftest=max(oe_tx_vftestnotmiss),
          maxoeiop=max(oe_iop, na.rm=TRUE),
-         maxoeiop=if_else(maxoeiop==-Inf, NA_real_, maxoeiop),
-         shouldcompletegs=ifelse((maxanyfail== 1 | randomization_model == "Refer"), 1, 0),
+         maxoeiop=if_else(maxoeiop==-Inf, NA_real_, as.numeric(maxoeiop)),
+         shouldcompletegs=ifelse((maxanyfailcd== 1 | randomization_model == "Refer"), 1, 0),
+         personexamined=max(eyeexamined),
          accountedfor=ifelse((ophthalmologist_exam_complete ==2 | phone_call_complete==2), 1, 0))
 
 addmargins(xtabs(data=filter(csdatalong, consent==1), ~ screenfail_anycd + refer_patient_randomizatio, addNA=TRUE))
@@ -401,32 +455,10 @@ addmargins(xtabs(data=filter(csdatalong, consent==1), ~ screenfail_anycd + refer
 # The way I troubleshot this was to make some dataframes with the ones that didn't make sense, and then just spot checked
 
 
-# This for table 2 and text:
-patientscreenfails <- csdatalong %>% 
-  filter(eye=="re") %>% 
-  group_by(clinic_attended_v2) %>%
-  summarize(anyfail=sum(maxanyfail==1),
-            nonefailrandom=sum(maxanyfail==0 & randomization_model=="Refer", na.rm=TRUE),
-            vafail=sum(maxvafail==1), # xtabs(data=filter(csdatalongreferralcheck,is.na(maxvafail)), ~study_id)
-                                      # JK cleaned on redcap. Assumed zero letters for pinhole for 3093274 OS.
-            iopfail=sum(maxiopfail==1),
-            abnldiscfail=sum(maxabnldiscfail==1),
-            amdfail=sum(maxamdfail==1),
-            drfail=sum(maxdrfail==1),
-            vcdrfail=sum(maxvcdrfail==1),
-            blurry=sum(maxsxblurry==1),
-            floater=sum(maxsxfloater==1),
-            flash=sum(maxsxflash==1),
-            scotoma=sum(maxsxscotoma==1),
-            othersx=sum(maxsxother==1),
-            anysx=sum(maxsxany==1),
-            vis_sx=sum(maxsxvisualsymptoms==1),
-            anysx_total=sum(!is.na(maxsxany)),
-            anyfail_completedophthoexam=sum(!is.na(oe_anyamd) & maxanyfail==1),
-            nonefail_completedophthoexam=sum(!is.na(oe_anyamd) & maxanyfail==0 & randomization_model=="Refer", na.rm=TRUE))
+  
 
-ts48.nonefail <- csdatalong %>% filter(!is.na(oe_anyamd) & maxanyfail==0 & randomization_model=="Refer") %>% select(starts_with("oe"))
-ts229.anyfail <- csdatalong %>% filter(!is.na(oe_anyamd) & maxanyfail==1) %>% select(starts_with("oe"))
+ts48.nonefail <- csdatalong %>% filter(!is.na(oe_anyamd) & maxanyfailcd==0 & randomization_model=="Refer") %>% select(starts_with("oe"))
+ts229.anyfail <- csdatalong %>% filter(!is.na(oe_anyamd) & maxanyfailcd==1) %>% select(starts_with("oe"))
 
 xtabs(data=csdatalong, ~accountedfor+shouldcompletegs, addNA=TRUE)
 xtabs(data=filter(csdatalong, shouldcompletegs==0 & accountedfor==1), ~study_id)
@@ -476,9 +508,9 @@ xtabs(data=filter(csdatalong, is.na(shouldcompletegs)), ~study_id+randomization_
 # Do you want to check the rest of the variables we made to make sure everything worked?
 
 
-addmargins(xtabs(data=filter(csdatalongreferralcheck, consent==1), ~ maxanyfail + refer_patient_randomizatio, addNA=TRUE))
+# addmargins(xtabs(data=filter(csdatalongreferralcheck, consent==1), ~ maxanyfail + refer_patient_randomizatio, addNA=TRUE))
 #why is the above different then the below??? # because the above is based on person and the below is based on eye ie. some people had one positive eye and one negative eye
-addmargins(xtabs(data=filter(csdatalongreferralcheck, consent==1), ~ screenfail_anycd + refer_patient_randomizatio, addNA=TRUE))
+# addmargins(xtabs(data=filter(csdatalongreferralcheck, consent==1), ~ screenfail_anycd + refer_patient_randomizatio, addNA=TRUE))
 
 
 ##########
@@ -516,7 +548,31 @@ for (value in allyrmo){
 kappalist # JM - this output shows the month, subjects included in the calculation, and the resulting kappa (for photo referrals)
 # try doing the above steps I did in lines 654-676 for photoagreement2 (any referral)
 
-# Text only: age sex of overall population:
+########################################
+###     PAPER ANALYSES / RESULTS     ###
+########################################
+# Flow diagram
+# ANY POSITIVE
+addmargins(xtabs(data=filter(csdatalong, eye=="re"), ~maxanyfailcd+personexamined, addNA=TRUE ))
+addmargins(xtabs(data=filter(csdatalong, eye=="re" & maxanyfailcd==0), ~randomization_model+personexamined, addNA=TRUE ))
+
+# ANY POSITIVE TESTS -- TARGET CONDITION PRESENT
+addmargins(xtabs(data=filter(csdatalong, eye=="re" & maxoeamddrglc==1 & maxanyfailcd==1), ~maxoeamd +maxoedr +maxoeglcsuspectorglc, addNA=TRUE ))
+addmargins(xtabs(data=filter(csdatalong, eye=="re" & maxoeamddrglc==1 & maxanyfailcd==1 & maxoeglcsuspectorglc==1), ~maxoeglc+maxoeglcsuspect, addNA=TRUE ))
+addmargins(xtabs(data=filter(csdatalong, eye=="re" & maxoeamddrglc==1 & maxanyfailcd==1), ~maxoecataract+maxoeamddrglc, addNA=TRUE ))
+# ANY POSITIVE TESTS -- TARGET CONDITION ABSENT
+addmargins(xtabs(data=filter(csdatalong, eye=="re" & maxoeamddrglc==0 & maxanyfailcd==1), ~maxoeamd +maxoedr +maxoeglcsuspectorglc, addNA=TRUE ))
+addmargins(xtabs(data=filter(csdatalong, eye=="re" & maxoeamddrglc==0 & maxanyfailcd==1), ~maxoecataract+maxoeamddrglc, addNA=TRUE ))
+# NO POSITIVE TESTS -- TARGET CONDITION PRESENT
+addmargins(xtabs(data=filter(csdatalong, eye=="re" & maxoeamddrglc==1 & maxanyfailcd==0 & randomization_model=="Refer"), ~maxoeamd +maxoedr +maxoeglcsuspectorglc, addNA=TRUE ))
+addmargins(xtabs(data=filter(csdatalong, eye=="re" & maxoeamddrglc==1 & maxanyfailcd==0 & maxoeglcsuspectorglc==1), ~maxoeglc+maxoeglcsuspect, addNA=TRUE ))
+addmargins(xtabs(data=filter(csdatalong, eye=="re" & maxoeamddrglc==1 & maxanyfailcd==0 & randomization_model=="Refer"), ~maxoecataract, addNA=TRUE ))
+# NO POSITIVE TESTS -- TARGET CONDITION ABSENT
+addmargins(xtabs(data=filter(csdatalong, eye=="re" & maxoeamddrglc==0 & maxanyfailcd==0 & randomization_model=="Refer"), ~maxoeamd +maxoedr +maxoeglcsuspectorglc, addNA=TRUE ))
+addmargins(xtabs(data=filter(csdatalong, eye=="re" & maxoeamddrglc==0 & maxanyfailcd==0 & randomization_model=="Refer"), ~maxoecataract, addNA=TRUE ))
+
+
+# Text first paragraph: age/sex of overall population:
 csdatawide %>% 
   filter(consent == 1) %>%
   summarize(consentyes_num=sum(consent==1),
@@ -537,7 +593,7 @@ csdatawide %>%
 # Because when you create lots of different objects, it can get confusing to figure out when numbers don't match up
 # And we're more confident in numbers if they always come from the same basic data. (in this case, csdatawide/csdatalong)
 
-demographicstable <- csdatawide %>%
+table2.demographics <- csdatawide %>%
   filter(consent == 1) %>%
   group_by(clinic_attended_v2) %>%
   summarize(consentyes_num=sum(consent==1),
@@ -562,27 +618,88 @@ demographicstable <- csdatawide %>%
             female_num=sum(sex1==1),
             female_total=sum(!is.na(sex1)),
             female_per=female_num/female_total,
+            cm.province_num=sum(chiangmai.province == 1, na.rm=TRUE),
+            cm.province_total=sum(!is.na(chiangmai.province)),
+            cm.province_per=(cm.province_num/cm.province_total),
+            cm.city_num=sum(chiangmai.city == 1, na.rm=TRUE),
+            cm.city_total=sum(!is.na(chiangmai.city)),
+            cm.city_per=(cm.city_num/cm.city_total),
             dm_num=sum(diagnosis_of_diabetes==1),
             dm_total=sum(!is.na(diagnosis_of_diabetes)),
-            dm_per=dm_num/dm_total)
-# JK: The following makes it easier to read, and could do write_csv and copy/paste in if you wanted.
-demographicstablelong <- demographicstable %>%
+            dm_per=dm_num/dm_total) %>%
   gather(field, value, consentyes_num:dm_per) %>%
   separate(field, into=c("variable","stat"), sep="_") %>%
   mutate(clinicstat=paste(clinic_attended_v2, stat, sep="_")) %>%
   select(-clinic_attended_v2, -stat) %>%
   spread(clinicstat, value)
-# Note: missing duration of DM for one person in the General clinic:
-csdatawide %>% filter(diagnosis_of_diabetes==1 & is.na(years_with_diabetes)) %>% select(study_id)
+# Note: missing duration of DM for one person in the General clinic--later must have been found...
+# csdatawide %>% filter(diagnosis_of_diabetes==1 & is.na(years_with_diabetes)) %>% select(study_id)
 
+# Symptoms for table 2:
+table2.symptoms <- csdatalong %>% 
+  filter(eye=="re") %>% 
+  group_by(clinic_attended_v2) %>%
+  summarize(blurry=sum(maxsxblurry==1),
+            floater=sum(maxsxfloater==1),
+            flash=sum(maxsxflash==1),
+            scotoma=sum(maxsxscotoma==1),
+            othersx=sum(maxsxother==1),
+            anysx=sum(maxsxany==1),
+            vis_sx=sum(maxsxvisualsymptoms==1),
+            anysx_total=sum(!is.na(maxsxany)))
+
+# TEXT
+patientscreenfails <- csdatalong %>% 
+  filter(eye=="re") %>% 
+  group_by(clinic_attended_v2) %>%
+  summarize(anyfailcd=sum(maxanyfailcd==1),
+            total=sum(!is.na(maxanyfailcd)),
+            nonefailrandom=sum(maxanyfailcd==0 & randomization_model=="Refer", na.rm=TRUE),
+            vafail=sum(maxvafail==1), # xtabs(data=filter(csdatalongreferralcheck,is.na(maxvafail)), ~study_id)
+            # JK cleaned on redcap. Assumed zero letters for pinhole for 3093274 OS.
+            iopfail=sum(maxiopfail==1),
+            abnldisccdfail=sum(maxabnldisccdfail==1),
+            amdcdfail=sum(maxamdcdfail==1),
+            drcdfail=sum(maxdrcdfail==1),
+            vcdrcdfail=sum(maxvcdrcdfail==1),
+            x_onlyphotocdfail=sum(maxphotocdfail==1 & maxvafail==0 & maxiopfail==0, na.rm = TRUE),
+            x_onlyvafail=sum(maxphotocdfail==0 & maxvafail==1 & maxiopfail==0),
+            x_onlyiopfail=sum(maxphotocdfail==0 & maxvafail==0 & maxiopfail==1),
+            x_vaiopfail=sum(maxphotocdfail==0 & maxvafail==1 & maxiopfail==1),
+            x_vaphotocdfail=sum(maxphotocdfail==1 & maxvafail==1 & maxiopfail==0),
+            x_iopphotocdfail=sum(maxphotocdfail==1 & maxvafail==0 & maxiopfail==1),
+            x_vaiopphotocdfail=sum(maxphotocdfail==1 & maxvafail==1 & maxiopfail==1),
+            anyfail_completedophthoexam=sum(!is.na(oe_anyamd) & maxanyfailcd==1),
+            nonefail_completedophthoexam=sum(!is.na(oe_anyamd) & maxanyfailcd==0 & randomization_model=="Refer", na.rm=TRUE))
+# TOTALS for text
+patientscreenfails %>%   
+  pivot_longer(cols=anyfailcd:nonefail_completedophthoexam,
+               names_to = "field",
+               values_to = "value") %>%
+  group_by(field) %>%
+  summarize(sum=sum(value),
+            percent=sum/889)
+# FIGURE 1: Venn diagram
+library(eulerr)
+# A=VA; B=IOP; C=Photo; D=Normal (this is 889-229=660)
+# x_iopphotocdfail                 5 --> B&C
+# x_onlyiopfail                   22 --> B 
+# x_onlyphotocdfail               81 --> C 
+# x_onlyvafail                    69 --> A 
+# x_vaiopfail                      3 --> A&B
+# x_vaiopphotocdfail               2 --> A&B&C
+# x_vaphotocdfail                 47 --> A&C 
+venndiagram <- euler(c("D&A"=69, "D&B"=22, "D&C"=81, D=660, "D&A&B"=3, "D&A&C"=47, "D&B&C"=5, "D&A&B&C"=2), shape="ellipse")
+vennplot <- plot(venndiagram, quantities=TRUE)
+vennplot
+# ggsave("vennplot.svg", plot=vennplot, device="svg", width=3.3, height=3.3, units="in")
 
 prostheses <- csdatalong %>%
   filter(grepl("prosthe",notes_for_flag) | grepl("prosthe",oe_majorcause_specother)) %>%
   select(study_id, eye,  va,iop, vcdr, dr, amd, notes_for_flag, oe_majorcause_specother, screenfail_anycd, screenfail_va, randomization_model)
 # JK: Not sure but the notes_for_flag seems to be an error since there is screening data for everything
 # So will only exclude 3867078 OS
-# Table 3
-# NEED TO INVESTIGATE THE MISSING VALUES!!
+# Table 3: Screening test results
 table3 <- csdatalong %>%
   filter(consent==1) %>%
   filter(!(study_id==3867078 & eye=="le")) %>%
@@ -596,18 +713,42 @@ table3 <- csdatalong %>%
             abnldiscfail_num=sum(screenfail_abnldisc==1, na.rm=TRUE),
             abnldiscfail_total=sum(!is.na(screenfail_abnldisc)),
             abnldiscfail_per=abnldiscfail_num/abnldiscfail_total,
+            abnldiscfailcd_num=sum(screenfail_abnldisccd==1 & screenfail_abnldisc==0, na.rm=TRUE),
+            abnldiscfailcd_total=sum(!is.na(screenfail_abnldisc) & !is.na(screenfail_abnldisccd)),
+            abnldiscfailcd_per=abnldiscfailcd_num/abnldiscfailcd_total,
             vcdrfail_num=sum(screenfail_vcdr==1, na.rm=TRUE),
             vcdrfail_total=sum(!is.na(screenfail_vcdr)),
             vcdrfail_per=vcdrfail_num/vcdrfail_total,
+            vcdrfailcd_num=sum(screenfail_vcdrcd==1 & screenfail_vcdr==0, na.rm=TRUE),
+            vcdrfailcd_total=sum(!is.na(screenfail_vcdr) & !is.na(screenfail_vcdrcd)),
+            vcdrfailcd_per=vcdrfailcd_num/vcdrfailcd_total,
             amdfail_num=sum(screenfail_amd==1, na.rm=TRUE),
             amdfail_total=sum(!is.na(screenfail_amd)),
             amdfail_per=amdfail_num/amdfail_total,
+            amdfailcd_num=sum(screenfail_amdcd==1 & screenfail_amd==0, na.rm=TRUE),
+            amdfailcd_total=sum(!is.na(screenfail_amd) & !is.na(screenfail_amdcd)),
+            amdfailcd_per=amdfailcd_num/amdfailcd_total,
             drfail_num=sum(screenfail_dr==1, na.rm=TRUE),
             drfail_total=sum(!is.na(screenfail_dr)),
             drfail_per=drfail_num/drfail_total,
-            photofail_num=sum(screenfail_abnldisc==1 | screenfail_vcdr==1 | screenfail_amd==1 | screenfail_dr==1),
-            photofail_total=sum(!is.na(screenfail_abnldisc) & !is.na(screenfail_vcdr) & !is.na(screenfail_amd) & !is.na(screenfail_dr)),
+            drfailcd_num=sum(screenfail_drcd==1 & screenfail_dr==0, na.rm=TRUE),
+            drfailcd_total=sum(!is.na(screenfail_dr) & !is.na(screenfail_drcd)),
+            drfailcd_per=drfailcd_num/drfailcd_total,
+            otherfail_num=sum(screenfail_other==1, na.rm=TRUE),
+            otherfail_total=sum(!is.na(screenfail_other)),
+            otherfail_per=otherfail_num/otherfail_total,
+            photofail_num=sum(screenfail_photopos==1, na.rm=TRUE),
+            photofail_total=sum(!is.na(screenfail_photopos)),
             photofail_per=photofail_num/photofail_total,
+            photofailcd_num=sum(screenfail_photoposcd==1 & screenfail_photopos==0, na.rm=TRUE),
+            photofailcd_total=sum(!is.na(screenfail_photoposcd) & !is.na(screenfail_photopos)),
+            photofailcd_per=photofailcd_num/photofailcd_total,
+            oldphotofail_num=sum(screenfail_abnldisc==1 | screenfail_vcdr==1 | screenfail_amd==1 | screenfail_dr==1),
+            oldphotofail_total=sum(!is.na(screenfail_abnldisc) & !is.na(screenfail_vcdr) & !is.na(screenfail_amd) & !is.na(screenfail_dr)),
+            oldphotofail_per=oldphotofail_num/oldphotofail_total,
+            anyfailcd_num=sum(screenfail_anycd==1, na.rm=TRUE),
+            anyfailcd_total=sum(!is.na(screenfail_anycd)),
+            anyfailcd_per=anyfailcd_num/anyfailcd_total, 
             anyfail_num=sum(screenfail_any==1, na.rm=TRUE),
             anyfail_total=sum(!is.na(screenfail_any)),
             anyfail_per=anyfail_num/anyfail_total) %>%
@@ -617,79 +758,704 @@ table3 <- csdatalong %>%
   select(-clinic_attended_v2, -stat) %>%
   spread(clinicstat, value)
 
-#Table 4 line by line
-addmargins(xtabs(data=filter(csdatalong, consent==1), ~ oe_anyamd + dmclinic, addNA = TRUE))
-addmargins(xtabs(data=filter(csdatalong, consent==1), ~ oe_anydr + dmclinic, addNA = TRUE))
-addmargins(xtabs(data=filter(csdatalong, consent==1), ~ oe_anyglc + dmclinic, addNA = TRUE))
-addmargins(xtabs(data=filter(csdatalong, consent==1), ~ oe_anyglcsuspect + dmclinic, addNA = TRUE))
-addmargins(xtabs(data=filter(csdatalong, consent==1), ~ oe_anyamddrglc + dmclinic, addNA = TRUE))
-addmargins(xtabs(data=filter(csdatalong, consent==1), ~ oe_tx_vftestnotmiss  + dmclinic, addNA = TRUE))
-addmargins(xtabs(data=filter(csdatalong, consent==1), ~ oe_tx_catsurgnotmiss  + dmclinic, addNA = TRUE))
-addmargins(xtabs(data=filter(csdatalong, consent==1), ~ oe_tx_rectxnotmiss + dmclinic, addNA = TRUE))
-
+# TABLE 4: OPHTHALMOLOGIST EXAM results
+# Data of just the people with eye exams:
+csdatalong.eyeexam <- csdatalong %>%
+  filter(consent==1 & !is.na(oe_iop)) %>% # ie, consent means they were consented for screening and oe_iop is complete for everyone getting a gold standard exam
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  filter(maxanyfailcd==1 | (maxanyfailcd==0 & randomization_model %in% "Refer"))
 # Text: These give the number of patients and eyes that actually got an ophthalmology exam
-xtabs(data=filter(csdatalong, consent==1 & !is.na(oe_anyamd) & eye=="re"), ~clinic_attended_v2,addNA=TRUE)
-xtabs(data=filter(csdatalong, consent==1 & !is.na(oe_anyamd)), ~clinic_attended_v2,addNA=TRUE)
-# Noticed a missing cataract, looked up on Redcap and patient did not have cataract so OK to just take the numerator:
-ts <- csdatalong %>%
-  filter(consent==1) %>%
-  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
-  filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
-  filter(is.na(oe_tx_catsurgnotmiss) & !is.na(oe_iop)) %>%
-  select(study_id, eye)
+addmargins(xtabs(data=filter(csdatalong.eyeexam, eye=="re"), ~clinic_attended_v2+maxanyfailcd,addNA=TRUE))
+addmargins(xtabs(data=csdatalong.eyeexam, ~clinic_attended_v2+screenfail_anycd,addNA=TRUE))
 
-##table 4 wide -- eye level
-table4wide <- csdatalong %>%
-  filter(consent==1) %>%
-  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
-  filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
+## Supplemental Table 1 -- eye level gold standard results: MISSING DATA FOR 2725659 (ophth exam, referral questions)
+# Note we shouldn't report referral questions here because those were asked at the patient level not eye level
+table4wide <- csdatalong.eyeexam %>%
   group_by(clinic_attended_v2, screenfail_anycd) %>%
-  summarize(consent_n=sum(!is.na(consent)),
-            oe_anyamd.mean=mean(oe_anyamd, na.rm=TRUE), 
+  summarize(consent.denom=sum(consent==1),
+            # oe_anyamd.mean=mean(oe_anyamd, na.rm=TRUE), 
             oe_anyamd.num=sum(oe_anyamd == 1, na.rm=TRUE),
             oe_anyamd.denom=sum(!is.na(oe_anyamd), na.rm=TRUE),
-            oe_anydr.mean=mean(oe_anydr, na.rm=TRUE), 
+            oe_anyamd.prop=oe_anyamd.num/oe_anyamd.denom,
+            # oe_anydr.mean=mean(oe_anydr, na.rm=TRUE), 
             oe_anydr.num=sum(oe_anydr == 1, na.rm=TRUE),
             oe_anydr.denom=sum(!is.na(oe_anydr), na.rm=TRUE),
-            oe_anyglc.mean=mean(oe_anyglcfalse, na.rm=TRUE), 
+            oe_anydr.prop=oe_anydr.num/oe_anydr.denom,
+            # oe_anyglc.mean=mean(oe_anyglcfalse, na.rm=TRUE), 
             oe_anyglc.num=sum(oe_anyglcfalse == 1, na.rm=TRUE),
             oe_anyglc.denom=sum(!is.na(oe_anyglcfalse), na.rm=TRUE),
-            oe_anyglcsuspect.mean=mean(oe_anyglcsuspect, na.rm=TRUE), 
+            oe_anyglc.prop=oe_anyglc.num/oe_anyglc.denom,
+            # oe_anyglcsuspect.mean=mean(oe_anyglcsuspect, na.rm=TRUE), 
             oe_anyglcsuspect.num=sum(oe_anyglcsuspect == 1, na.rm=TRUE),
             oe_anyglcsuspect.denom=sum(!is.na(oe_anyglcsuspect), na.rm=TRUE),
-            oe_anyamddrglc.mean=mean(oe_anyamddrglc, na.rm=TRUE), 
+            oe_anyglcsuspect.prop=oe_anyglcsuspect.num/oe_anyglcsuspect.denom,
+            # oe_anyamddrglc.mean=mean(oe_anyamddrglc, na.rm=TRUE), 
             oe_anyamddrglc.num=sum(oe_anyamddrglc == 1, na.rm=TRUE),
             oe_anyamddrglc.denom=sum(!is.na(oe_anyamddrglc), na.rm=TRUE),
-            oe_tx_vftestnotmiss.mean=mean(oe_tx_vftestnotmiss, na.rm=TRUE), 
+            oe_anyamddrglc.prop=oe_anyamddrglc.num/oe_anyamddrglc.denom,
+            # oe_tx_vftestnotmiss.mean=mean(oe_tx_vftestnotmiss, na.rm=TRUE), 
             oe_tx_vftestnotmiss.num=sum(oe_tx_vftestnotmiss == 1, na.rm=TRUE),
             oe_tx_vftestnotmiss.denom=sum(!is.na(oe_tx_vftestnotmiss), na.rm=TRUE),
-            oe_tx_catsurgnotmiss.mean=mean(oe_tx_catsurgnotmiss, na.rm=TRUE), 
+            oe_tx_vftestnotmiss.prop=oe_tx_vftestnotmiss.num/oe_tx_vftestnotmiss.denom,
+            # oe_tx_catsurgnotmiss.mean=mean(oe_tx_catsurgnotmiss, na.rm=TRUE), 
             oe_tx_catsurgnotmiss.num=sum(oe_tx_catsurgnotmiss == 1, na.rm=TRUE),
             oe_tx_catsurgnotmiss.denom=sum(!is.na(oe_tx_catsurgnotmiss), na.rm=TRUE),
-            oe_tx_rectxnotmiss.mean=mean(oe_tx_rectxnotmiss, na.rm=TRUE), 
+            oe_tx_catsurgnotmiss.prop=oe_tx_catsurgnotmiss.num/oe_tx_catsurgnotmiss.denom,
+            oe_lens_cataract.num=sum(oe_lens_cataract == 1, na.rm=TRUE),
+            oe_lens_cataract.denom=sum(!is.na(oe_lens_cataract), na.rm=TRUE),
+            oe_lens_cataract.prop=oe_lens_cataract.num/oe_lens_cataract.denom,
+            # oe_tx_rectxnotmiss.mean=mean(oe_tx_rectxnotmiss, na.rm=TRUE), 
             oe_tx_rectxnotmiss.num=sum(oe_tx_rectxnotmiss == 1, na.rm=TRUE),
-            oe_tx_rectxnotmiss.denom=sum(!is.na(oe_tx_rectxnotmiss), na.rm=TRUE))
+            oe_tx_rectxnotmiss.denom=sum(!is.na(oe_tx_rectxnotmiss), na.rm=TRUE),
+            oe_tx_rectxnotmiss.prop=oe_tx_rectxnotmiss.num/oe_tx_rectxnotmiss.denom) %>%
+  pivot_longer(cols=consent.denom:oe_tx_rectxnotmiss.prop,
+               names_to=c("var", "stat"),
+               names_sep="\\.",
+               values_to="value") %>%
+  mutate(clinicstat=paste(clinic_attended_v2, stat, sep="_")) %>%
+  ungroup() %>%
+  select(-clinic_attended_v2, -stat) %>%
+  pivot_wider(names_from = clinicstat,
+              values_from="value")
 
-##table 4 wide -- patient level
-table4.patient <- csdatalong %>%
-  filter(consent==1 & eye=="re" & !is.na(maxoeiop)) %>%
-  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
-  filter(maxanyfail==1 | (maxanyfail==0 & randomization_model %in% "Refer")) %>%
-  group_by(clinic_attended_v2, maxanyfail) %>%
-  summarize(consent_n=sum(consent==1),
+##table 4 -- patient level gold standard results MISSING DATA FOR 2725659 (ophth exam, referral questions)
+table4.patient <- csdatalong.eyeexam %>%
+  filter(eye=="re") %>%
+  group_by(clinic_attended_v2, maxanyfailcd) %>%
+  summarize(consent.denom=sum(consent==1),
             oe_anyamd.num=sum(maxoeamd == 1),
             oe_anyamd.denom=sum(!is.na(maxoeamd)),
             oe_anyamd.prop=oe_anyamd.num/oe_anyamd.denom,
             oe_anydr.num=sum(maxoedr == 1),
             oe_anydr.denom=sum(!is.na(maxoedr)),
             oe_anydr.prop=oe_anydr.num/oe_anydr.denom,
-            oe_anyglcsus.num=sum(maxoeglcsuspect == 1),
+            oe_anyglcsus.num=sum(maxoeglcsuspect == 1, na.rm=TRUE),
             oe_anyglcsus.denom=sum(!is.na(maxoeglcsuspect)),
             oe_anyglcsus.prop=oe_anyglcsus.num/oe_anyglcsus.denom,
-            oe_anycataract.num=sum(maxoecataract == 1),
+            oe_anyglc.num=sum(maxoeglc == 1, na.rm=TRUE),
+            oe_anyglc.denom=sum(!is.na(maxoeglc)),
+            oe_anyglc.prop=oe_anyglc.num/oe_anyglc.denom,
+            oe_anyamddrglc.num=sum(maxoeamddrglc == 1, na.rm=TRUE),
+            oe_anyamddrglc.denom=sum(!is.na(maxoeamddrglc)),
+            oe_anyamddrglc.prop=oe_anyamddrglc.num/oe_anyamddrglc.denom,
+            oe_anycatamddrglc.num=sum(maxoeamddrglc == 1 | maxoecataract==1, na.rm=TRUE),
+            oe_anycatamddrglc.denom=sum(!is.na(maxoeamddrglc) & !is.na(maxoecataract)),
+            oe_anycatamddrglc.prop=oe_anycatamddrglc.num/oe_anycatamddrglc.denom,
+            # oe_retref.num=sum(maxoeretina == 1, na.rm=TRUE),
+            # oe_retref.denom=sum(!is.na(maxoeretina)),
+            # oe_retref.prop=oe_retref.num/oe_retref.denom,
+            # oe_vfref.num=sum(maxoevftest == 1, na.rm=TRUE),
+            # oe_vfref.denom=sum(!is.na(maxoevftest)),
+            # oe_vfref.prop=oe_vfref.num/oe_vfref.denom,
+            oe_anycatlens.num=sum(maxoecataractlens== 1, na.rm=TRUE),
+            oe_anycatlens.denom=sum(!is.na(maxoecataractlens)),
+            oe_anycatlens.prop=oe_anycatlens.num/oe_anycatlens.denom,
+            # Note this anycatlens is from the eye-level checkbox "cataract"
+            # Based on the numbers, this was checked for even mild cataract
+            # The anycataract is person-level checkboxd for advise cataract surgery
+            # So for Suppl Table 1 do not report cataract for now. 
+            # If they ask in revision you could use the eye-level and person-level variables 
+            # to make a mild vs moderate cataract designation (mild if eye-level yes and person-level no, mod if eye-level yes and person-level yes)
+            # But requires assumptions so better to try to get away with not reporting the eye-level data
+            oe_anycataract.num=sum(maxoecataract == 1, na.rm=TRUE),
             oe_anycataract.denom=sum(!is.na(maxoecataract)),
-            oe_anycataract.prop=oe_anycataract.num/oe_anycataract.denom)
+            oe_anycataract.prop=oe_anycataract.num/oe_anycataract.denom) %>%
+  pivot_longer(cols=consent.denom:oe_anycataract.prop,
+             names_to=c("var", "stat"),
+             names_sep="\\.",
+             values_to="value") %>%
+  mutate(clinicstat=paste(clinic_attended_v2, stat, sep="_")) %>%
+  ungroup() %>%
+  select(-clinic_attended_v2, -stat) %>%
+  pivot_wider(names_from = clinicstat,
+              values_from="value") %>%
+  mutate(All_denom=Diabetes_denom+Thyroid_denom+General_denom,
+         All_num=Diabetes_num+Thyroid_num+General_num,
+         All_prop=All_num/All_denom)
 
+# TABLE 5: PREDICTIVE VALUES
+# Shouldn't these weights be different for the different clinics?
+xtabs(data=filter(csdatalong, eye=="re"), ~maxanyfailcd + randomization_model, addNA=TRUE) # This for screened population
+xtabs(data=filter(csdatalong.eyeexam, eye=="re"), ~maxanyfailcd + randomization_model, addNA=TRUE) # This for ophth-examined population
+library(survey)
+library(broom)
+# EXAMPLE START
+# data(api)
+# xtabs(data=apistrat, ~pw+fpc)
+# EXAMPLE END (I explored that data)
+# So based on that example, fpc needs to be 229 and 660
+# and weights need to be 1 [1/(229/229)] and 8.91 [1/(76/660)] ;  ie the numbers failing (229) and not failing (660) test, 
+# and then the proportion of each that were referred (all of failing; 76/660 of not failing; see tables just above)
+# Though this does not account for non-response weights
+# https://bookdown.org/jespasareig/Book_How_to_weight_a_survey/nonresponse-weights.html
+# Note I am basing this on the numbers failing/not failing and not the numbers presenting for exam. I am not sure which is correct.
+
+# csdatalong.eyeexam.weights <- csdatalong.eyeexam %>%
+#   filter(eye=="re") %>%
+#   mutate(pw=case_when(maxanyfailcd==1 ~ 1,
+#                       maxanyfailcd==0 ~ 1/(76/660),
+#                       TRUE ~ NA_real_),
+#          fpc=case_when(maxanyfailcd==1 ~ 229,
+#                        maxanyfailcd==0 ~ 660,
+#                        TRUE ~ NA_real_))
+# # Just confirming weights look OK; these should add up to total sample size, which they do:
+# csdatalong.screened <- csdatalong %>%
+#   filter(consent==1) %>% # ie, consent means they were consented for screening
+#   mutate(pw=case_when(maxanyfailcd==1 ~ 1,
+#                       maxanyfailcd==0 ~ 1/(76/660),
+#                       TRUE ~ NA_real_),
+#          fpc=case_when(maxanyfailcd==1 ~ 229,
+#                        maxanyfailcd==0 ~ 660,
+#                        TRUE ~ NA_real_))
+# csdatalong.screened %>% ungroup() %>% dplyr::summarize(sumwt=sum(pw))
+# csdatalong.screened %>% ungroup() %>% filter(eye=="re") %>% dplyr::summarize(sumwt=sum(pw))
+
+# Trying lasso regression for nonresponse
+library(glmnet)
+# First, need population that should have gotten an exam
+csdatalongreferred <- csdatalong %>%
+  filter(consent==1 & eye=="re") %>% # ie, consent means they were consented for screening and oe_iop is complete for everyone getting a gold standard exam
+  filter(maxanyfailcd==1 | (maxanyfailcd==0 & randomization_model %in% "Refer"))
+csdatalongreferred.eye <- csdatalong %>%
+  filter(consent==1) %>% # ie, consent means they were consented for screening and oe_iop is complete for everyone getting a gold standard exam
+  filter(!(study_id==3867078 & eye=="le")) %>% # This is the prosthetic eye
+  filter(maxanyfailcd==1 | (maxanyfailcd==0 & randomization_model %in% "Refer")) # 609 eyes referred
+
+# Once not missing could add these in: chiangmai.province + chiangmai.city
+formula.resp.lasso <- as.formula("personexamined ~ age + sex1 + travel_time + diagnosis_of_diabetes + maxsxany")
+options(na.action = 'na.pass')
+x.matrix <- model.matrix(formula.resp.lasso, data = csdatalongreferred)
+glm.cv.model <- cv.glmnet(x.matrix, csdatalongreferred$personexamined, alpha = 1, family="binomial")
+predicted.lasso <- predict(glm.cv.model, x.matrix, s = "lambda.min", type = "response")[,1]
+csdatalongreferred$predicted.lasso <- predicted.lasso
+head(predicted.lasso)
+# Logistic regression
+log.reg.m <- glm(formula.resp.lasso, data = csdatalongreferred, family = "binomial")
+predicted.log <- log.reg.m$fitted.values
+csdatalongreferred$predicted.log <- predicted.log
+csdatalongreferred.eye %<>%
+  left_join(., select(csdatalongreferred, predicted.log))
+# Comparing lasso vs logistic regression
+
+
+
+library(magrittr)
+csdatalongreferred %<>%
+  mutate(predicted.category.log.reg = (predicted.log > 0.5) %>% as.numeric,
+         predicted.category.lasso = (predicted.lasso > 0.5) %>% as.numeric)
+train.correct.logreg <- table(csdatalongreferred$personexamined, csdatalongreferred$predicted.category.log.reg) %>% diag() %>% sum()/nrow(csdatalongreferred)
+train.correct.lasso <- table(csdatalongreferred$personexamined, csdatalongreferred$predicted.category.lasso) %>% diag() %>% sum()/nrow(csdatalongreferred)
+c(train.correct.logreg = train.correct.logreg, train.correct.lasso = train.correct.lasso)
+# Seems very close. Identical?
+csdatapersonexamined <- csdatalongreferred %>%
+  ungroup() %>%
+  mutate(pw=case_when(maxanyfailcd==1 ~ 1,
+                      maxanyfailcd==0 ~ 1/(76/660),
+                      TRUE ~ NA_real_),
+         pw.scaled=pw/mean(pw),
+         fpc=case_when(maxanyfailcd==1 ~ 229,
+                       maxanyfailcd==0 ~ 660,
+                       TRUE ~ NA_real_),
+         predicted.log.wt=1/predicted.log) %>%
+  filter(personexamined==1) %>%
+  mutate(predicted.log.wt.scaled=predicted.log.wt/mean(predicted.log.wt),
+         finalweight=pw*predicted.log,
+         finalweight.scaled=pw.scaled*predicted.log.wt.scaled)
+csdatapersonexamined %>% ungroup() %>% summarize(sumpws=sum(pw.scaled), sumlws=sum(predicted.log.wt.scaled), sumfws=sum(finalweight.scaled))
+ggplot(data=csdatapersonexamined, aes(x=finalweight.scaled, y=predicted.log.wt.scaled)) +
+  geom_point()
+
+addmargins(xtabs(data=csdatalong, ~maxanyfailcd + randomization_model, addNA=TRUE)) # This for screened population
+addmargins(xtabs(data=csdatalongreferred.eye, ~maxanyfailcd + randomization_model, addNA=TRUE)) # This for ophth-examined population
+
+csdatapersonexamined.eye <- csdatalongreferred.eye %>%
+  ungroup() %>%
+  mutate(pw=case_when(maxanyfailcd==1 ~ 1,
+                      maxanyfailcd==0 ~ 1/(76/660),
+                      TRUE ~ NA_real_),
+         pw.scaled=pw/mean(pw),
+         fpc=case_when(maxanyfailcd==1 ~ 458,
+                       maxanyfailcd==0 ~ 1320,
+                       TRUE ~ NA_real_),
+         predicted.log.wt=1/predicted.log) %>%
+  filter(personexamined==1) %>%
+  mutate(predicted.log.wt.scaled=predicted.log.wt/mean(predicted.log.wt),
+         finalweight.scaled=pw.scaled*predicted.log.wt.scaled)
+csdatapersonexamined.eye %>% ungroup() %>% summarize(sumpws=sum(pw.scaled), sumlws=sum(predicted.log.wt.scaled), sumfws=sum(finalweight.scaled))
+
+surv2 <- svydesign(id=~1,strata=~maxanyfailcd, weights=~pw, data=csdatalong.eyeexam.weights, fpc=~fpc)
+newsurv2 <- svydesign(id=~1,strata=~maxanyfailcd, weights=~finalweight.scaled, data=csdatapersonexamined, fpc=~fpc)
+  
+
+# So then the PPV of any failed test for cataract:
+# (A) Demonstration of difference between weighted and unweighted; looks like this weighting code working
+# (B) Demonstration that the answers of suvey analyses are similar for just sample weights (surv2) and sample plus nonresponse weights (newsurv2)
+xtabs(data=csdatalong.eyeexam.weights , ~maxanyfailcd+maxoedr, addNA=TRUE)
+xtabs(data=csdatapersonexamined , ~maxanyfailcd+maxoedr, addNA=TRUE)
+# PPV: 44/(145+44)=0.233
+# NPV: 48/(48+2)=0.96
+# Sens: wrong way: 44/(2+44)=0.956. If we want to give the screen negatives 10 times the weight, then more like 44/(20+44)=0.688
+# Spec: wrong way: 48/(48+145)=0.249. If we want to give the screen negatives 10 times the weight, then more like 480/(480+145)=0.768
+# Unweighted ppv
+tidy(lm(maxoedr ~ 1, data = filter(csdatalong.eyeexam.weights, maxanyfailcd == 1)), conf.int=TRUE) %>% mutate(stat="ppv")
+tidy(lm(maxoedr ~ 1, data = filter(csdatapersonexamined, maxanyfailcd == 1)), conf.int=TRUE) %>% mutate(stat="ppv")
+# Weighted ppv
+svyciprop(~I(maxoedr==1), subset(surv2, maxanyfailcd==1), method="xlogit")
+svyciprop(~I(maxoedr==1), subset(newsurv2, maxanyfailcd==1), method="xlogit")
+# Unweighted npv (also by the way note the problem that CI above 1 in this case)
+tidy(lm(abs(maxoedr-1) ~ 1, data = filter(csdatalong.eyeexam.weights, maxanyfailcd == 0)), conf.int=TRUE) %>% mutate(stat="npv")
+# Weighted npv
+svyciprop(~I(abs(maxoedr-1)==1), subset(surv2, maxanyfailcd==0), method="xlogit")
+svyciprop(~I(abs(maxoedr-1)==1), subset(newsurv2, maxanyfailcd==0), method="xlogit")
+# Unweighted sens
+tidy(lm(maxanyfailcd ~ 1, data = filter(csdatalong.eyeexam.weights, maxoedr == 1)), conf.int=TRUE) %>% mutate(stat="sens")
+# Weighted sens
+svyciprop(~I(maxanyfailcd==1), subset(surv2, maxoedr==1), method="xlogit")
+svyciprop(~I(maxanyfailcd==1), subset(newsurv2, maxoedr==1), method="xlogit")
+
+# Unweighted spec
+tidy(lm(abs(maxanyfailcd-1) ~ 1, data = filter(csdatalong.eyeexam.weights, maxoedr == 0)), conf.int=TRUE) %>% mutate(stat="spec")
+# Weighted spec
+svyciprop(~I(abs(maxanyfailcd-1)==1), subset(surv2, maxoedr==0), method="xlogit")
+svyciprop(~I(abs(maxanyfailcd-1)==1), subset(newsurv2, maxoedr==0), method="xlogit")
+
+# Function to get sens/spec/ppv/npv
+sspvfx <- function(screenresult, examresult) {
+  screenresult_mod <- enquo(screenresult)
+  examresult_mod <- enquo(examresult)
+  # Need to first use this quo_name to put the enquoted variables into an actual formula; then pass the formula to the function
+  # When I tried to just use the quo_name in the function, I couldn't get it to work 
+  ssf1 <- formula(paste0("~", quo_name(screenresult_mod)))
+  ssf2 <- formula(paste0("~I(", quo_name(examresult_mod), "==1)"))
+  ssnos <- svyby(ssf1,ssf2,design=newsurv2, unwtd.count) %>% 
+    rename(exampos=1)
+  ss <- svyby(ssf1,ssf2,design=newsurv2, svyciprop, vartype="ci") %>% 
+    rename(exampos=1) %>%
+    mutate(est=if_else(exampos==FALSE, 1-(!!screenresult_mod), !!screenresult_mod),
+           low95=if_else(exampos==FALSE, 1-ci_u, ci_l),
+           up95=if_else(exampos==FALSE, 1-ci_l, ci_u),
+           stat=if_else(exampos==FALSE, "spec", "sens")) %>%
+    left_join(., ssnos, by="exampos") %>%
+    select(stat, est, low95, up95, counts)
+  pvf1 <- formula(paste0("~", quo_name(examresult_mod)))
+  pvf2 <- formula(paste0("~I(", quo_name(screenresult_mod), "==1)"))
+  pvnos <- svyby(pvf1,pvf2,design=newsurv2, unwtd.count) %>% 
+    rename(screenpos=1)
+  pv <- svyby(pvf1,pvf2,design=newsurv2, svyciprop, vartype="ci") %>% 
+    rename(screenpos=1) %>%
+    mutate(est=if_else(screenpos==FALSE, 1-(!!examresult_mod), !!examresult_mod),
+           low95=if_else(screenpos==FALSE, 1-ci_u, ci_l),
+           up95=if_else(screenpos==FALSE, 1-ci_l, ci_u),
+           stat=if_else(screenpos==FALSE, "npv", "ppv")) %>%
+    left_join(., pvnos, by="screenpos") %>%
+    select(stat, est, low95, up95, counts) 
+  sspv <- bind_rows(ss, pv) %>%
+    mutate(exam=quo_name(examresult_mod),
+           screen=quo_name(screenresult_mod))
+  newname <- paste0(quo_name(screenresult_mod), ".", quo_name(examresult_mod))
+  assign(newname, sspv, envir=.GlobalEnv)
+}
+
+# To run all possible combinations, need to use the cross functionality
+# examvars <- vars(maxoeamd, maxoedr, maxoeglc, maxoeglcsuspect, maxoeglcsuspectorglc, maxoecataract, maxoeamddrglc, maxoeamddrglccat)
+# screenvars <- vars(maxanyfailcd, maxvafail, maxiopfail, maxphotocdfail, maxabnldisccdfail, maxamdcdfail, maxdrcdfail, maxvcdrcdfail, maxphotofail, maxabnldiscfail, maxamdfail, maxdrfail, maxvcdrfail)
+examvars <- vars(maxoeamd, maxoedr, maxoeglcsuspectorglc, maxoecataract, maxoeamddrglccat)
+screenvars <- vars(maxanyfailcd, maxvafail, maxiopfail, maxphotocdfail)
+screenexamcdf <- cross_df(list(screenvars=screenvars, examvars=examvars))
+# Just for record-keeping/possible future use, this works for a single variable
+# a <- map(examvars, ~sspvfx(maxanyfailcd, !!.x))
+# aa <- bind_rows(a, .id="label")
+sspvdata <- map2_dfr(screenexamcdf$screenvars, screenexamcdf$examvars, sspvfx)
+
+
+sspvplotdata <- sspvdata %>%
+  mutate(exam=factor(exam, levels=c("maxoeamddrglccat", "maxoecataract", "maxoedr", "maxoeglcsuspectorglc", "maxoeamd")),
+         screen=factor(screen, levels=c("maxanyfailcd", "maxphotocdfail", "maxvafail", "maxiopfail")),
+         stat=case_when(stat=="sens" ~ "Sens",
+                        stat=="spec" ~ "Spec",
+                        stat=="ppv" ~ "PPV",
+                        stat=="npv" ~ "NPV",
+                        TRUE ~ NA_character_))
+# To get numbers to put in graph:
+sspvplotnums <- sspvplotdata %>%
+  filter(stat=="Sens" | stat=="PPV") %>%
+  ungroup() %>%
+  mutate(senscountwork=if_else(stat=="Sens", counts, NA_real_),
+            ppvcountwork=if_else(stat=="PPV", counts, NA_real_)) %>%
+  group_by(screen, exam) %>%
+  summarize(examnum=max(senscountwork, na.rm=TRUE),
+            screennum=max(ppvcountwork, na.rm=TRUE))
+library(viridis)
+library(RColorBrewer)
+brewer.pal(n = 4, name = "Paired")
+examlabs <- c(maxoeamddrglccat="Any disease\n134 diagnosed", maxoecataract="Cataract\n57 diagnosed", maxoedr="DR\n46 diagnosed", maxoeglcsuspectorglc="Glaucoma\n34 diagnosed", maxoeamd="AMD\n19 diagnosed")
+screenlabs <- c(maxanyfailcd="Any test\n189 failed", maxvafail="VA\n98 failed", maxiopfail="IOP\n25 failed", maxphotocdfail="Photo\n114 failed")
+sspvplot <- ggplot(data = sspvplotdata, aes(x=stat, y=est, group=stat, fill=stat, color=stat)) +
+  geom_bar(stat = "identity", position = "dodge", color=NA, alpha = 0.7) +
+  geom_errorbar(aes(ymin=low95, ymax=up95), width=0.2, size=(0.5/2.141959), position = position_dodge(0.9)) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), expand = c(0, 0), name ="Percent", limits=c(0,1)) +
+  xlab("Statistic") +
+  # scale_color_viridis(discrete=TRUE, option="inferno") + # options: magma, inferno, plasma, viridis
+  # scale_fill_viridis(discrete=TRUE, option="inferno") +
+  # scale_color_brewer(palette = "Paired") + # the color-blind friendly are: Dark2, Paired, Set2
+  # scale_fill_brewer(palette = "Paired") +
+  scale_fill_manual(values=c("#A6CEE3", "#1F78B4", "#33A02C", "#B2DF8A")) +
+  scale_color_manual(values=c("#A6CEE3", "#1F78B4", "#33A02C", "#B2DF8A")) +
+  facet_grid(exam ~ screen, labeller=labeller(exam=examlabs, screen=screenlabs)) +
+  theme(axis.line.y = element_line(colour = "black", size = (0.5/2.141959)),
+        axis.line.x = element_line(colour = "black", size = (0.5/2.141959)),
+        axis.text.y = element_text(color = "black", size = 8),
+        axis.text.x= element_text(color="black", size=8, angle=45, hjust = 1),
+        axis.title = element_text(color="black", size=9),
+        axis.ticks = element_line(colour = "black", size = (0.5/2.141959)),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"),
+        # legend.title=element_text(size=8), 
+        # legend.text=element_text(size=8),
+        legend.position="none",
+        strip.text = element_text(size=8), # face="bold"
+        panel.spacing.y = unit(1, "lines"), # Otherwise labels overlap
+        strip.background = element_rect(colour=NA, fill=NA))
+sspvplot
+ggsave("sspvplot.svg", sspvplot, width = 3.4, height = 6, units = c("in"), device="svg")
+
+# Try supplemental figure --eye level
+addmargins(xtabs(data=csdatalong, ~maxanyfailcd + randomization_model, addNA=TRUE)) # This for screened population
+# So just double the previous
+# csdatalong.eyeexam.weights.eyelevel <- csdatalong.eyeexam %>%
+#   mutate(pw=case_when(maxanyfailcd==1 ~ 1,
+#                       maxanyfailcd==0 ~ 1/(152/1320),
+#                       TRUE ~ NA_real_),
+#          fpc=case_when(maxanyfailcd==1 ~ 458,
+#                        maxanyfailcd==0 ~ 1320,
+#                        TRUE ~ NA_real_))
+
+
+surv.eyelevel <- svydesign(id=~1,strata=~maxanyfailcd, weights=~pw, data=csdatapersonexamined.eye, fpc=~fpc)
+# Function to get sens/spec/ppv/npv at eye level
+sspvfx.eye <- function(screenresult, examresult) {
+  screenresult_mod <- enquo(screenresult)
+  examresult_mod <- enquo(examresult)
+  # Need to first use this quo_name to put the enquoted variables into an actual formula; then pass the formula to the function
+  # When I tried to just use the quo_name in the function, I couldn't get it to work 
+  ssf1 <- formula(paste0("~", quo_name(screenresult_mod)))
+  ssf2 <- formula(paste0("~I(", quo_name(examresult_mod), "==1)"))
+  ssnos <- svyby(ssf1,ssf2,design=surv.eyelevel, unwtd.count) %>% 
+    rename(exampos=1)
+  ss <- svyby(ssf1,ssf2,design=surv.eyelevel, svyciprop, vartype="ci") %>% 
+    rename(exampos=1) %>%
+    mutate(est=if_else(exampos==FALSE, 1-(!!screenresult_mod), !!screenresult_mod),
+           low95=if_else(exampos==FALSE, 1-ci_u, ci_l),
+           up95=if_else(exampos==FALSE, 1-ci_l, ci_u),
+           stat=if_else(exampos==FALSE, "spec", "sens")) %>%
+    left_join(., ssnos, by="exampos") %>%
+    select(stat, est, low95, up95, counts)
+  pvf1 <- formula(paste0("~", quo_name(examresult_mod)))
+  pvf2 <- formula(paste0("~I(", quo_name(screenresult_mod), "==1)"))
+  pvnos <- svyby(pvf1,pvf2,design=surv.eyelevel, unwtd.count) %>% 
+    rename(screenpos=1)
+  pv <- svyby(pvf1,pvf2,design=surv.eyelevel, svyciprop, vartype="ci") %>% 
+    rename(screenpos=1) %>%
+    mutate(est=if_else(screenpos==FALSE, 1-(!!examresult_mod), !!examresult_mod),
+           low95=if_else(screenpos==FALSE, 1-ci_u, ci_l),
+           up95=if_else(screenpos==FALSE, 1-ci_l, ci_u),
+           stat=if_else(screenpos==FALSE, "npv", "ppv")) %>%
+    left_join(., pvnos, by="screenpos") %>%
+    select(stat, est, low95, up95, counts) 
+  sspv <- bind_rows(ss, pv) %>%
+    mutate(exam=quo_name(examresult_mod),
+           screen=quo_name(screenresult_mod))
+  newname <- paste0(quo_name(screenresult_mod), ".", quo_name(examresult_mod))
+  assign(newname, sspv, envir=.GlobalEnv)
+}
+
+examvars.eye <- vars(oe_anyamd, oe_anydr, oe_anyglcsuspectglc, oe_anyamddrglcsuspglc)
+screenvars.eye <- vars(screenfail_photoposcd, screenfail_photopos, 
+                       screenfail_abnldisccd, screenfail_abnldisc, 
+                       screenfail_vcdrcd, screenfail_vcdr, 
+                       screenfail_drcd, screenfail_dr, 
+                       screenfail_amdcd, screenfail_amd,
+                       screenfail_other)
+screenvars.eye2 <- vars(screenfail_photocdonly, screenfail_photopos, 
+                        screenfail_photo_abdisccdonly, screenfail_abnldisc, 
+                        screenfail_vcdrcdonly, screenfail_vcdr, 
+                        screenfail_drcdonly, screenfail_dr, 
+                        screenfail_amdcdonly, screenfail_amd,
+                        screenfail_other)
+screenexamcdf.eye <- cross_df(list(screenvars.eye=screenvars.eye, examvars.eye=examvars.eye))
+screenexamcdf.eye2 <- cross_df(list(screenvars.eye2=screenvars.eye2, examvars.eye=examvars.eye))
+sspvdata.eye <- map2_dfr(screenexamcdf.eye$screenvars.eye, screenexamcdf.eye$examvars.eye, sspvfx.eye)
+sspvdata.eye2 <- map2_dfr(screenexamcdf.eye2$screenvars.eye2, screenexamcdf.eye2$examvars.eye, sspvfx.eye)
+sspvplotdata.eye <- sspvdata.eye %>%
+  mutate(exam=factor(exam, levels=c("oe_anyamddrglcsuspglc", "oe_anydr", "oe_anyglcsuspectglc","oe_anyamd")),
+         screen=factor(screen, levels=c("screenfail_photoposcd", "screenfail_photopos", 
+                                        "screenfail_drcd", "screenfail_dr", 
+                                        "screenfail_abnldisccd", "screenfail_abnldisc", 
+                                        "screenfail_vcdrcd", "screenfail_vcdr", 
+                                        "screenfail_amdcd", "screenfail_amd",
+                                        "screenfail_other")),
+         stat=case_when(stat=="sens" ~ "Sens",
+                        stat=="spec" ~ "Spec",
+                        stat=="ppv" ~ "PPV",
+                        stat=="npv" ~ "NPV",
+                        TRUE ~ NA_character_),
+         screendisease=factor(case_when(screen %in% c("screenfail_photopos", "screenfail_photoposcd") ~ "Any abnormality",
+                                        screen %in% c("screenfail_dr", "screenfail_drcd") ~ "DR",
+                                        screen %in% c("screenfail_abnldisc", "screenfail_abnldisccd") ~ "Disk abnormality",
+                                        screen %in% c("screenfail_vcdr", "screenfail_vcdrcd") ~ "VCDR",
+                                        screen %in% c("screenfail_amd", "screenfail_amdcd") ~ "AMD",
+                                        screen %in% c("screenfail_other") ~ "Other",
+                                        TRUE ~ NA_character_), levels=c("Any abnormality","DR", "Disk abnormality","VCDR","AMD", "Other")))
+screenlabs.eye <- c(screenfail_photopos="Ungradables\nnot referred\n133 test +", screenfail_photoposcd="Ungradables\nreferred\n176 test +", 
+                    screenfail_dr="Ungradables\nnot referred\n65 test +", screenfail_drcd="Ungradables\nreferred\n100 test +",
+                    screenfail_abnldisc="Ungradables\nnot referred\n17 test +", screenfail_abnldisccd="Ungradables\nreferred\n41 test +",
+                    screenfail_vcdr="Ungradables\nnot referred\n30 test +", screenfail_vcdrcd="Ungradables\nreferred\n61 test +",
+                    screenfail_amd="Ungradables\nnot referred\n15 test +", screenfail_amdcd="Ungradables\nreferred\n53 test +",
+                    screenfail_other="Ungradables\nnot referred\n23 test +")
+
+sspvplotdata.eye2 <- sspvdata.eye2 %>%
+  mutate(exam=factor(exam, levels=c("oe_anyamddrglcsuspglc",  "oe_anydr", "oe_anyglcsuspectglc", "oe_anyamd")),
+         screen=factor(screen, levels=c("screenfail_photopos", "screenfail_photocdonly", 
+                                        "screenfail_dr", "screenfail_drcdonly", 
+                                        "screenfail_abnldisc", "screenfail_photo_abdisccdonly", 
+                                        "screenfail_vcdr", "screenfail_vcdrcdonly",  
+                                        "screenfail_amd", "screenfail_amdcdonly", 
+                                        "screenfail_other")),
+         stat=case_when(stat=="sens" ~ "Sens",
+                        stat=="spec" ~ "Spec",
+                        stat=="ppv" ~ "PPV",
+                        stat=="npv" ~ "NPV",
+                        TRUE ~ NA_character_),
+         screendisease=factor(case_when(screen %in% c("screenfail_photopos", "screenfail_photocdonly") ~ "Any abnormality",
+                                 screen %in% c("screenfail_dr", "screenfail_drcdonly") ~ "DR",
+                                 screen %in% c("screenfail_abnldisc", "screenfail_photo_abdisccdonly") ~ "Disk abnormality",
+                                 screen %in% c("screenfail_vcdr", "screenfail_vcdrcdonly") ~ "VCDR",
+                                 screen %in% c("screenfail_amd", "screenfail_amdcdonly") ~ "AMD",
+                                 screen %in% c("screenfail_other") ~ "Other",
+                                 TRUE ~ NA_character_), levels=c("Any abnormality","DR", "Disk abnormality","VCDR","AMD", "Other")),
+         cdonly=if_else(grepl("cdonly", screen),"Ungradable","Abnormal")) %>%
+  filter(stat=="PPV") %>%
+  filter(screendisease != "Other")
+sspvplotnums.eye <- sspvplotdata.eye %>%
+  ungroup() %>%
+  mutate(senscountwork=if_else(stat=="Sens", counts, NA_real_),
+         ppvcountwork=if_else(stat=="PPV", counts, NA_real_),
+         speccountwork=if_else(stat=="Spec", counts, NA_real_),
+         npvcountwork=if_else(stat=="PPV", counts, NA_real_)) %>%
+  group_by(screendisease, screen, exam) %>%
+  summarize(examnum=max(senscountwork, na.rm=TRUE),
+            screennum=max(ppvcountwork, na.rm=TRUE),
+            examtotal=max(senscountwork, na.rm=TRUE)+max(speccountwork, na.rm=TRUE))
+examlabs.eye <- c(oe_anyamddrglcsuspglc="DR/Glaucoma/AMD\n152 diagnosed", oe_anydr="DR\n82 diagnosed", oe_anyglcsuspectglc="Glaucoma\n59 diagnosed", oe_anyamd="AMD\n32 diagnosed")
+examlabs.eye2 <- c(oe_anyamddrglcsuspglc="DR/Glaucoma/AMD", oe_anydr="DR", oe_anyglcsuspectglc="Glaucoma", oe_anyamd="AMD")
+
+screenlabs.eye2 <- c(screenfail_photopos="Gradable\n133 failed", screenfail_photocdonly="Ungradable\n17 failed", 
+                    screenfail_dr="Gradable\n65 failed", screenfail_drcdonly="Ungradable\n35 failed",
+                    screenfail_abnldisc="Gradable\n17 failed", screenfail_photo_abdisccdonly="Ungradable\n24 failed",
+                    screenfail_vcdr="Gradable\n30 failed", screenfail_vcdrcdonly="Ungradable\n31 failed",
+                    screenfail_amd="Gradable\n15 failed", screenfail_amdcdonly="Ungradable\n38 failed")
+screendiseaselabs.eye2 <- c("Any abnormality"="Any\nN=133/17", 
+                            "DR"="DR\nN=65/35", 
+                            "Disk abnormality"="Disk\nN=17/24", 
+                            "VCDR"="VCDR\nN=30/31", 
+                            "AMD"="AMD\nN=15/38")
+
+sspvplot.eye <- ggplot(data = sspvplotdata.eye, aes(x=stat, y=est, group=stat, fill=stat, color=stat)) +
+  geom_bar(stat = "identity", position = "dodge", color=NA, alpha = 0.7) +
+  geom_errorbar(aes(ymin=low95, ymax=up95), width=0.2, size=(0.5/2.141959), position = position_dodge(0.9)) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), expand = c(0, 0), name ="Percent", limits=c(0,1)) +
+  xlab("Statistic") +
+  scale_fill_manual(values=c("#A6CEE3", "#1F78B4", "#33A02C", "#B2DF8A")) +
+  scale_color_manual(values=c("#A6CEE3", "#1F78B4", "#33A02C", "#B2DF8A")) +
+  facet_grid(exam ~ screendisease + screen, labeller=labeller(exam=examlabs.eye, screen=screenlabs.eye)) +
+  theme(axis.line.y = element_line(colour = "black", size = (0.5/2.141959)),
+        axis.line.x = element_line(colour = "black", size = (0.5/2.141959)),
+        axis.text.y = element_text(color = "black", size = 8),
+        axis.text.x= element_text(color="black", size=8, angle=45, hjust = 1),
+        axis.title = element_text(color="black", size=9),
+        axis.ticks = element_line(colour = "black", size = (0.5/2.141959)),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        # panel.background = element_blank(), axis.line = element_line(colour = "black"),
+        legend.position="none",
+        strip.text = element_text(size=8, face="italic"), # face="bold"
+        panel.spacing.y = unit(1, "lines"), # Otherwise labels overlap
+        strip.background = element_rect(colour=NA, fill=NA))
+sspvplot.eye
+ggsave("sspvplot.eye.svg", sspvplot.eye, width = 10, height = 6, units = c("in"), device="svg")
+
+
+sspvplot.eye2 <- ggplot(data = sspvplotdata.eye2, aes(x=cdonly, y=est, group=cdonly)) +
+  geom_bar(stat = "identity", position = "dodge", fill="#1F78B4", color=NA, alpha = 0.7) +
+  geom_errorbar(aes(ymin=low95, ymax=up95), width=0.2, size=(0.5/2.141959), position = position_dodge(0.9), color="#1F78B4",) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), expand = c(0, 0), name ="Positive Predictive Value", limits=c(0,1)) +
+  xlab("Test-positive group") +
+  facet_grid(exam ~ screendisease, labeller=labeller(exam=examlabs.eye2, screendisease=screendiseaselabs.eye2)) +
+  theme(axis.line.y = element_line(colour = "black", size = (0.5/2.141959)),
+        axis.line.x = element_line(colour = "black", size = (0.5/2.141959)),
+        axis.text.y = element_text(color = "black", size = 8),
+        axis.text.x= element_text(color="black", size=8, angle=45, hjust = 1),
+        axis.title = element_text(color="black", size=9),
+        axis.ticks = element_line(colour = "black", size = (0.5/2.141959)),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"),
+        legend.position="none",
+        strip.text = element_text(size=8), # face="bold"
+        panel.spacing.y = unit(1, "lines"), # Otherwise labels overlap
+        strip.background = element_rect(colour=NA, fill=NA))
+sspvplot.eye2
+ggsave("sspvplot.eye2.svg", sspvplot.eye2, width = 5, height = 6, units = c("in"), device="svg")
+
+# TEXT: How many patients had ungradable images in at least 1 versus gradable images for all 4.
+library(janitor)
+# csdatalong %>% 
+#   filter(eye=="re") %>% filter(maxanyfailcd==1 | (maxanyfailcd==0 & randomization_model=="Refer")) %>%
+#   tabyl(maxphotocdany,maxphotocdfail) # Numbers are correct
+csdatalong %>%
+  filter(eye=="re") %>% 
+  filter(maxanyfailcd==1 | (maxanyfailcd==0 & randomization_model=="Refer")) %>%
+  filter(maxphotocdany==1 & maxphotocdfail==1) %>% # Just move around these 1's to get the numbers
+  tabyl(maxvafail) 
+
+
+
+
+
+
+screenexamcdf <- cross_df(list(screenvars=screenvars, examvars=examvars))
+# Just for record-keeping/possible future use, this works for a single variable
+# a <- map(examvars, ~sspvfx(maxanyfailcd, !!.x))
+# aa <- bind_rows(a, .id="label")
+sspvdata <- map2_dfr(screenexamcdf$screenvars, screenexamcdf$examvars, sspvfx)
+
+
+sspvplotdata <- sspvdata %>%
+  mutate(exam=factor(exam, levels=c("maxoeamddrglccat", "maxoecataract", "maxoedr", "maxoeglcsuspectorglc", "maxoeamd")),
+         screen=factor(screen, levels=c("maxanyfailcd", "maxvafail", "maxiopfail", "maxphotocdfail")),
+         stat=case_when(stat=="sens" ~ "Sens",
+                        stat=="spec" ~ "Spec",
+                        stat=="ppv" ~ "PPV",
+                        stat=="npv" ~ "NPV",
+                        TRUE ~ NA_character_))
+
+
+
+
+
+
+
+xtabs(data=csdatalong.eyeexam.weights, ~maxanyfailcd+maxoedr)
+# For PPV
+a <- svyby(~maxoedr,~I(maxanyfailcd==1),design=surv2, svyciprop, vartype="ci")
+# Note this svyby gives PPV (under TRUE) and NPV (if take 1 minus FALSE)
+
+
+surv3 <- svydesign(id=~1,strata=~maxanyfailcd, weights=~pw, subset=~I(in.subcohort | rel), data=csdatalong.eyeexam.weights, fpc=~fpc)
+
+surv3 <- as.svydesign2(subset(surv2, maxoedr==0))
+senssvydata <- svydesign(paste0(  id=~1,strata=~examresult_mod, weights=~pw, data=csdatalong.eyeexam.weights, fpc=~fpc
+                                  ))
+
+drexam <- function(screenresult, examresult) {
+  screenresult_mod <- enquo(screenresult)
+  # npv <- svyciprop(~I(maxoedr==0), subset(surv2, maxanyfailcd==0), method="xlogit")
+  # ppv <- svyciprop(~I(maxoedr==1), subset(surv2, maxanyfailcd==1), method="xlogit")
+  sensformula <- formula(paste0("~I(", quo_name(screenresult_mod), ")==1"))
+  sens <- svyciprop(sensformula, subset(surv2, eval(examresult)>=1), method="xlogit")
+  # specformula <- formula(paste0("~I(", quo_name(screenresult_mod), ")==0"))
+  # spec <- svyciprop(specformula, subset(surv2, maxoedr==0), method="xlogit")
+  # as.vector(sens)
+  # attr(spec, "ci")
+  data.frame(spec=as.vector(spec), as.list(attr(spec, "ci")), sens=as.vector(sens), as.list(attr(sens, "ci")), stat="dr")
+}
+drexam(maxanyfailcd, maxoedr)
+
+specdata <- paste0("subset(surv2, (", "examresult", ")==0)")
+
+subset = rlang::eval_tidy( expr( !!subpop_quo == i), data =  data) )
+
+subset(surv2, examresult ==0)
+
+# So for the predictive values only need a single survey object for PPVs and another for NPVs. 
+# But for 
+npv.anyfail.dr.svy <- svyglm(abs(maxoedr-1) ~ 1, nonefailcd.surv, family=binomial())
+npv.anyfail.dr.svy.predict <- predict(npv.anyfail.dr.svy, data.frame(examresult=1), type="response")
+confint(npv.anyfail.dr.svy.predict)
+
+confint(npv.anyfail.dr.svy)
+
+sens.anyfail.dr.svy <- svyglm(maxanyfailcd ~ 1, dr.yes.surv.anyfail))
+
+
+xtabs(data=csdatalong.eyeexam.weights, ~maxanyfailcd+maxoedr)
+npvmod <- lm(abs(maxoedr-1) ~ 1, data = filter(csdatalong.eyeexam.weights, maxanyfailcd == 0))
+summary(npvmod)
+npvmod2 <- glm(abs(maxoedr-1) ~ 1, data = filter(csdatalong.eyeexam.weights, maxanyfailcd == 0))
+
+ppvfx(csdatalong.eyeexam.weights, maxanyfailcd, maxoedr)
+ppvfx2(csdatalong.eyeexam.weights, maxanyfailcd, maxoedr)
+# First without weights:
+xtabs(data=filter(csdatalong2, maxoedr==1), ~maxanyfail)
+sens.anyfail.dr = lm(maxanyfail ~ 1, data=filter(csdatalong2, maxoedr==1))
+summary(sens.anyfail.dr)
+# With weights
+dr.yes.surv.anyfail <- svydesign(id=~1,strata=~maxanyfail, weights=~pw, data=filter(csdatalong2, maxoedr==1), fpc=~fpc)
+(sens.anyfail.dr.svy <- svyglm(maxanyfail ~ 1, dr.yes.surv.anyfail))
+# It's a lower estimate with the sampling weights. Only 71% compared with 96% if no weights. That seems about right. 
+
+
+# PPV of any failed test
+ppvfx(csdatalong.eyeexam.weights, maxanyfailcd, maxoedr)
+ppvfx(csdatalong.eyeexam.weights, maxanyfailcd, maxoeamd)
+ppvfx(csdatalong.eyeexam.weights, maxanyfailcd, maxoeglc)
+ppvfx(csdatalong.eyeexam.weights, maxanyfailcd, maxoeglcsuspect)
+# PPV of failed photo (CD)
+ppvfx(csdatalong.eyeexam.weights, maxphotocdfail, maxoedr)
+ppvfx(csdatalong.eyeexam.weights, maxphotocdfail, maxoeamd)
+ppvfx(csdatalong.eyeexam.weights, maxphotocdfail, maxoeglc)
+ppvfx(csdatalong.eyeexam.weights, maxphotocdfail, maxoeglcsuspect)
+# PPV of failed photo (not CD)
+ppvfx(csdatalong.eyeexam.weights, maxphotofail, maxoedr)
+ppvfx(csdatalong.eyeexam.weights, maxphotofail, maxoeamd)
+ppvfx(csdatalong.eyeexam.weights, maxphotofail, maxoeglc)
+ppvfx(csdatalong.eyeexam.weights, maxphotofail, maxoeglcsuspect)
+# Should probably calculate separately just for CD ones maybe?
+
+%>% select(!!screenresult_mod, !!examresult_mod)
+
+ppv.anyfail.cataract = lm(maxoecataract ~ 1, data=filter(csdatalong.eyeexam.weights, maxanyfailcd==1))
+summary(ppv.anyfail.cataract)
+
+
+
+# Now with weights (it's the same, as it should be):
+anyfail.surv <- svydesign(id=~1,strata=~maxanyfail, weights=~pw, data=filter(csdatalong2, maxanyfail==1), fpc=~fpc)
+(ppv.anyfail.cataract.svy <- svyglm(maxoecataract ~ 1, anyfail.surv))
+# And now the PPV of any failed test for DR:
+# First without weights:
+xtabs(data=filter(csdatalong2, maxanyfail==1), ~maxoedr)
+ppv.anyfail.dr = lm(maxoedr ~ 1, data=filter(csdatalong2, maxanyfail==1))
+summary(ppv.anyfail.dr)
+# Now with weights (it's the same, as it should be, since this is a patient level analysis.):
+(ppv.anyfail.dr.svy <- svyglm(maxoedr ~ 1, anyfail.surv))
+# What about sensitivity?
+
+# First without weights:
+xtabs(data=filter(csdatalong2, maxoedr==1), ~maxanyfail)
+sens.anyfail.dr = lm(maxanyfail ~ 1, data=filter(csdatalong2, maxoedr==1))
+summary(sens.anyfail.dr)
+# With weights
+dr.yes.surv.anyfail <- svydesign(id=~1,strata=~maxanyfail, weights=~pw, data=filter(csdatalong2, maxoedr==1), fpc=~fpc)
+(sens.anyfail.dr.svy <- svyglm(maxanyfail ~ 1, dr.yes.surv.anyfail))
+# It's a lower estimate with the sampling weights. Only 71% compared with 96% if no weights. That seems about right. 
+
+
+
+
+
+
+
+t5.va.ppv.patient <- csdatalong.eyeexam.weights %>%
+  group_by(clinic_attended_v2, maxanyfailcd) %>%
 
 addmargins(xtabs(data=csdatalong, ~screenfail_va+clinic_attended_v2, addNA=TRUE))
 t5.va.ppv.eye <- csdatalong %>%
